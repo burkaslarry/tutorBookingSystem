@@ -1,0 +1,13 @@
+{
+  "name": "tutor-booking-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI learning centre booking and check-in system",
+  "scripts": {
+    "start": "node --experimental-sqlite server.js",
+    "test": "node --experimental-sqlite --test"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

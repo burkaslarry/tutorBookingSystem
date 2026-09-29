@@ -1,4 +1,4 @@
-const STORAGE_KEY = "ai-learning-center-bookings";
+const LEGACY_STORAGE_KEY = "ai-learning-center-bookings";
 const bookingDateInput = document.querySelector("#booking-date");
 const statusFilter = document.querySelector("#status-filter");
 const bookingList = document.querySelector("#booking-list");
@@ -8,13 +8,14 @@ const mobileTabs = document.querySelector(".mobile-tabs");
 const warning = document.querySelector("#storage-warning");
 const today = new Date();
 const localToday = formatDate(today);
-let bookings = loadBookings();
+let bookings = [];
 
 bookingDateInput.value = localToday;
 form.elements.date.value = localToday;
 form.elements.date.min = localToday;
 render();
 activateMobileTab("dashboard");
+loadBookings();
 
 bookingDateInput.addEventListener("change", () => {
   render();
@@ -26,7 +27,7 @@ statusFilter.addEventListener("change", () => {
 
 exportCalendarButton.addEventListener("click", exportCalendar);
 
-form.addEventListener("submit", (event) => {
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!form.reportValidity()) return;
 
@@ -46,9 +47,16 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
-  bookings.push(booking);
-  if (!saveBookings()) {
-    bookings.pop();
+  setFormBusy(true);
+  try {
+    await apiRequest("/api/bookings", {
+      method: "POST",
+      body: JSON.stringify(booking),
+    });
+    bookings.push(booking);
+  } catch (error) {
+    showStorageError(error.message, error);
+    setFormBusy(false);
     return;
   }
 
@@ -58,6 +66,7 @@ form.addEventListener("submit", (event) => {
   form.elements.date.value = localToday;
   form.elements.date.min = localToday;
   activateMobileTab("bookings");
+  setFormBusy(false);
   render();
 });
 
@@ -66,7 +75,7 @@ mobileTabs.addEventListener("click", (event) => {
   if (button) activateMobileTab(button.dataset.tab);
 });
 
-bookingList.addEventListener("click", (event) => {
+bookingList.addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
 
@@ -84,8 +93,16 @@ bookingList.addEventListener("click", (event) => {
     return;
   }
 
-  if (!saveBookings()) {
+  button.disabled = true;
+  try {
+    await apiRequest(`/api/bookings/${encodeURIComponent(booking.id)}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: booking.status }),
+    });
+  } catch (error) {
     booking.status = previousStatus;
+    button.disabled = false;
+    showStorageError(error.message, error);
     return;
   }
   render();
@@ -114,16 +131,15 @@ function activateMobileTab(tab) {
   });
 }
 
-function loadBookings() {
+async function loadBookings() {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) throw new Error("預約資料格式不正確。");
-    return parsed.filter(isBooking);
+    const data = await apiRequest("/api/bookings");
+    bookings = Array.isArray(data.bookings) ? data.bookings.filter(isBooking) : [];
+    if (bookings.length === 0) await migrateLegacyBookings();
+    warning.hidden = true;
+    render();
   } catch (error) {
-    showStorageError("無法讀取已儲存的預約。請檢查瀏覽器儲存空間。", error);
-    return [];
+    showStorageError("無法連接預約資料庫。請以 npm start 啟動系統後再試。", error);
   }
 }
 
@@ -138,15 +154,35 @@ function isBooking(value) {
     && ["pending", "checked-in", "cancelled"].includes(value.status);
 }
 
-function saveBookings() {
+async function migrateLegacyBookings() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings));
-    warning.hidden = true;
-    return true;
+    const stored = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!stored) return;
+    const legacyBookings = JSON.parse(stored).filter(isBooking);
+    for (const booking of legacyBookings) {
+      await apiRequest("/api/bookings", { method: "POST", body: JSON.stringify(booking) });
+    }
+    bookings = legacyBookings;
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch (error) {
-    showStorageError("無法儲存預約。請檢查瀏覽器儲存空間後再試。", error);
-    return false;
+    console.error("無法搬移舊有瀏覽器預約資料。", error);
   }
+}
+
+async function apiRequest(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...options.headers },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "資料庫操作失敗，請再試一次。");
+  return data;
+}
+
+function setFormBusy(busy) {
+  form.querySelectorAll("input, select, button").forEach((element) => {
+    element.disabled = busy;
+  });
 }
 
 function showStorageError(message, error) {

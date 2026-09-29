@@ -13,7 +13,7 @@
 
 4. 在 Google Calendar 建立專用日曆（例如「AI 課程預約」），複製 Calendar ID；再把指定 Google 電郵地址加入分享，權限設為「查看所有活動詳細資料」。
 
-5. 把 OAuth Client ID 和 Calendar ID 安全交給開發者接入系統。現時系統仍是本機儲存加 `.ics` 匯出，尚未完成 OAuth 即時同步。
+5. 把 OAuth Client ID、Client Secret 和 Calendar ID 安全交給開發者接入系統。現時系統已改用 SQLite 儲存並支援 `.ics` 匯出；OAuth 即時同步需要收到以上資料後才可完成。Client Secret 只會放在伺服器環境變數，不會放在前端或提交到 Git。
 
 
 
