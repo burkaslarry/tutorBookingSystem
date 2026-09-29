@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-HK">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f6fa">
+    <title>AI 課程預約及簽到</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="AI 學習中心首頁">
+          <span class="brand-mark" aria-hidden="true">A</span>
+          <span>AI 學習中心</span>
+        </a>
+        <span class="workspace-label">預約管理</span>
+      </header>
+
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">課堂管理</p>
+          <h1>預約及簽到</h1>
+          <p class="subtitle">管理每日課堂預約，學生到達後即可為他們簽到。</p>
+        </div>
+        <label class="date-picker">
+          <span>課堂日期</span>
+          <input id="booking-date" type="date" aria-label="選擇課堂日期">
+        </label>
+      </section>
+
+      <section class="dashboard-view" data-view="dashboard" aria-label="儀表板">
+        <div class="summary-grid" aria-label="當日預約摘要">
+          <article class="summary-card">
+            <span class="summary-icon icon-blue" aria-hidden="true">▤</span>
+            <div>
+              <p>今日預約</p>
+              <strong id="total-count">0</strong>
+            </div>
+            <span class="summary-unit">位學生</span>
+          </article>
+          <article class="summary-card">
+            <span class="summary-icon icon-amber" aria-hidden="true">◷</span>
+            <div>
+              <p>等待簽到</p>
+              <strong id="waiting-count">0</strong>
+            </div>
+            <span class="summary-unit">位學生</span>
+          </article>
+          <article class="summary-card">
+            <span class="summary-icon icon-green" aria-hidden="true">✓</span>
+            <div>
+              <p>已完成簽到</p>
+              <strong id="checked-in-count">0</strong>
+            </div>
+            <span class="summary-unit">位學生</span>
+          </article>
+        </div>
+      </section>
+
+      <div class="content-grid">
+        <section class="booking-panel" data-view="bookings" aria-labelledby="list-heading">
+          <div class="panel-heading">
+            <div>
+              <h2 id="list-heading">課堂名單</h2>
+              <p id="list-date-label">所選日期的預約</p>
+            </div>
+            <div class="panel-tools">
+              <button id="export-calendar" class="export-button" type="button">匯出 .ics</button>
+              <label class="filter-wrap">
+                <span class="sr-only">篩選簽到狀態</span>
+                <select id="status-filter">
+                  <option value="all">全部狀態</option>
+                  <option value="pending">待簽到</option>
+                  <option value="checked-in">已簽到</option>
+                  <option value="cancelled">已取消</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div id="booking-list" class="booking-list" aria-live="polite"></div>
+          <p class="calendar-note">匯出有效預約為日曆檔，再於 Google 日曆匯入。</p>
+          <p id="storage-warning" class="storage-warning" role="alert" hidden></p>
+        </section>
+
+        <aside class="form-panel" data-view="add" aria-labelledby="form-heading">
+          <div class="form-heading">
+            <span class="form-icon" aria-hidden="true">＋</span>
+            <div>
+              <h2 id="form-heading">新增預約</h2>
+              <p>填寫學生資料以安排課堂</p>
+            </div>
+          </div>
+          <form id="booking-form">
+            <label>
+              學生姓名
+              <input name="student" type="text" placeholder="例如：陳小明" maxlength="60" required>
+            </label>
+            <label>
+              聯絡電話
+              <input name="phone" type="tel" placeholder="例如：9123 4567" maxlength="30" required>
+            </label>
+            <label>
+              AI 課程
+              <select name="course" required>
+                <option value="" disabled selected>選擇課程</option>
+                <option>人工智能入門</option>
+                <option>Python 與機器學習</option>
+                <option>生成式 AI 工作坊</option>
+                <option>AI 專題指導</option>
+              </select>
+            </label>
+            <div class="form-row">
+              <label>
+                上課日期
+                <input name="date" type="date" required>
+              </label>
+              <label>
+                上課時間
+                <input name="time" type="time" required>
+              </label>
+            </div>
+            <button class="primary-button" type="submit">建立預約</button>
+          </form>
+        </aside>
+      </div>
+      <footer>AI 學習中心 <span aria-hidden="true">·</span> 預約只儲存於此瀏覽器</footer>
+    </main>
+    <nav class="mobile-tabs" aria-label="主要導覽">
+      <button type="button" data-tab="dashboard" aria-current="page">
+        <span aria-hidden="true">▤</span>
+        <span>儀表板</span>
+      </button>
+      <button type="button" data-tab="bookings">
+        <span aria-hidden="true">☷</span>
+        <span>預約</span>
+      </button>
+      <button type="button" data-tab="add">
+        <span aria-hidden="true">＋</span>
+        <span>新增</span>
+      </button>
+    </nav>
+  </body>
+</html>
