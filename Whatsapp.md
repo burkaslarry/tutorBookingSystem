@@ -26,4 +26,4 @@
 另外請建立 Google Cloud 專案、啟用 Google Calendar API，設定 OAuth consent screen，建立 Web application 的 OAuth Client ID，並把 `http://localhost:8000` 加入 Authorized JavaScript origins。再建立一個「AI 課程預約」Google 日曆，將需要查看的 Google 電郵地址設為唯讀分享。
 
 
-完成後請把 Google 帳戶地址、OAuth Client ID 和 Calendar ID 交給我。登入密碼請用密碼管理器安全分享，**不要透過 WhatsApp 傳送**；系統會用 Google OAuth 授權，不會把 Gmail 密碼寫進程式。
+完成後請把 Google 帳戶地址、OAuth Client ID 和 Calendar ID 交給我。OAuth Client Secret 及登入密碼請用密碼管理器安全分享，**不要透過 WhatsApp 傳送**；系統會用 Google OAuth 授權，不會把 Gmail 密碼寫進程式。
