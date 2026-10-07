@@ -11,135 +11,235 @@
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <a class="brand" href="#" aria-label="AI 學習中心首頁">
+        <a class="brand" href="#register" aria-label="AI 學習中心首頁">
           <span class="brand-mark" aria-hidden="true">A</span>
           <span>AI 學習中心</span>
         </a>
-        <span class="workspace-label">預約管理</span>
+        <nav class="top-nav" aria-label="主要導覽">
+          <button type="button" data-go="register">學生登記</button>
+          <button type="button" data-go="calendar" data-admin-nav hidden>日曆</button>
+          <button type="button" data-go="courses" data-admin-nav hidden>課程</button>
+          <button type="button" data-go="slots" data-admin-nav hidden>時段</button>
+          <button type="button" data-go="login" id="login-nav">管理員登入</button>
+          <button type="button" data-go="logout" id="logout-nav" hidden>登出</button>
+        </nav>
       </header>
 
       <section class="page-heading">
         <div>
           <p class="eyebrow">課堂管理</p>
-          <h1>預約及簽到</h1>
-          <p class="subtitle">管理每日課堂預約，學生到達後即可為他們簽到。</p>
+          <h1 id="page-title">學生登記</h1>
+          <p class="subtitle" id="page-subtitle">選擇課程時段，先以轉數快付款並上載收據。</p>
         </div>
-        <label class="date-picker">
-          <span>課堂日期</span>
-          <input id="booking-date" type="date" aria-label="選擇課堂日期">
-        </label>
+        <p id="session-label" class="workspace-label" hidden></p>
       </section>
 
-      <section class="dashboard-view" data-view="dashboard" aria-label="儀表板">
-        <div class="summary-grid" aria-label="當日預約摘要">
-          <article class="summary-card">
-            <span class="summary-icon icon-blue" aria-hidden="true">▤</span>
-            <div>
-              <p>今日預約</p>
-              <strong id="total-count">0</strong>
-            </div>
-            <span class="summary-unit">位學生</span>
-          </article>
-          <article class="summary-card">
-            <span class="summary-icon icon-amber" aria-hidden="true">◷</span>
-            <div>
-              <p>等待簽到</p>
-              <strong id="waiting-count">0</strong>
-            </div>
-            <span class="summary-unit">位學生</span>
-          </article>
-          <article class="summary-card">
-            <span class="summary-icon icon-green" aria-hidden="true">✓</span>
-            <div>
-              <p>已完成簽到</p>
-              <strong id="checked-in-count">0</strong>
-            </div>
-            <span class="summary-unit">位學生</span>
-          </article>
-        </div>
-      </section>
+      <p id="flash" class="flash" role="status" hidden></p>
 
-      <div class="content-grid">
-        <section class="booking-panel" data-view="bookings" aria-labelledby="list-heading">
-          <div class="panel-heading">
-            <div>
-              <h2 id="list-heading">課堂名單</h2>
-              <p id="list-date-label">所選日期的預約</p>
+      <section id="screen-register" data-screen="register">
+        <form id="register-form" class="register-layout">
+          <div class="form-panel">
+            <div class="form-heading">
+              <span class="form-icon" aria-hidden="true">＋</span>
+              <div>
+                <h2>登記資料</h2>
+                <p>填寫學生資料以預約課堂</p>
+              </div>
             </div>
-            <div class="panel-tools">
-              <button id="export-calendar" class="export-button" type="button">匯出 .ics</button>
-              <label class="filter-wrap">
-                <span class="sr-only">篩選簽到狀態</span>
-                <select id="status-filter">
-                  <option value="all">全部狀態</option>
-                  <option value="pending">待簽到</option>
-                  <option value="checked-in">已簽到</option>
-                  <option value="cancelled">已取消</option>
-                </select>
-              </label>
-            </div>
-          </div>
-          <div id="booking-list" class="booking-list" aria-live="polite"></div>
-          <p class="calendar-note">匯出有效預約為日曆檔，再於 Google 日曆匯入。</p>
-          <p id="storage-warning" class="storage-warning" role="alert" hidden></p>
-        </section>
-
-        <aside class="form-panel" data-view="add" aria-labelledby="form-heading">
-          <div class="form-heading">
-            <span class="form-icon" aria-hidden="true">＋</span>
-            <div>
-              <h2 id="form-heading">新增預約</h2>
-              <p>填寫學生資料以安排課堂</p>
-            </div>
-          </div>
-          <form id="booking-form">
             <label>
               學生姓名
-              <input name="student" type="text" placeholder="例如：陳小明" maxlength="60" required>
+              <input name="studentName" type="text" placeholder="例如：陳小明" maxlength="60" autocomplete="name" required>
             </label>
             <label>
               聯絡電話
-              <input name="phone" type="tel" placeholder="例如：9123 4567" maxlength="30" required>
+              <input name="phone" type="tel" placeholder="例如：9123 4567" maxlength="30" autocomplete="tel" required>
             </label>
             <label>
-              AI 課程
-              <select name="course" required>
-                <option value="" disabled selected>選擇課程</option>
-                <option>人工智能入門</option>
-                <option>Python 與機器學習</option>
-                <option>生成式 AI 工作坊</option>
-                <option>AI 專題指導</option>
+              電郵
+              <input name="email" type="email" placeholder="用於確認及上課提醒" maxlength="120" autocomplete="email" required>
+            </label>
+            <label>
+              課程
+              <select name="courseId" id="course-select" required>
+                <option value="">載入課程中…</option>
               </select>
             </label>
-            <div class="form-row">
-              <label>
-                上課日期
-                <input name="date" type="date" required>
+            <label>
+              上課時段
+              <select name="slotId" id="slot-select" required>
+                <option value="">請先選擇課程</option>
+              </select>
+            </label>
+            <p id="slot-price" class="field-note">請選擇時段以查看學費。</p>
+            <fieldset class="payment-methods">
+              <legend>付款方式</legend>
+              <label class="radio-row">
+                <input type="radio" name="paymentMethod" value="fps" checked>
+                <span>轉數快 FPS</span>
               </label>
-              <label>
-                上課時間
-                <input name="time" type="time" required>
+              <label class="radio-row">
+                <input type="radio" name="paymentMethod" value="kpay">
+                <span>KPay</span>
               </label>
+            </fieldset>
+            <p id="kpay-note" class="field-note">選擇 KPay 後會前往付款頁。尚未啟用時請使用轉數快。</p>
+          </div>
+
+          <aside class="form-panel upload-panel">
+            <div class="form-heading">
+              <span class="form-icon" aria-hidden="true">↥</span>
+              <div>
+                <h2>轉數快收據</h2>
+                <p>上載控制在登記表旁邊</p>
+              </div>
             </div>
-            <button class="primary-button" type="submit">建立預約</button>
+            <p id="fps-instructions" class="field-note">請先以轉數快（FPS）付款，再上載 .png 或 .jpeg 收據。</p>
+            <label class="upload-control">
+              收據圖片
+              <input id="receipt-input" name="receipt" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" required>
+            </label>
+            <p class="field-note">只接受 .png 與 .jpeg，最大 5MB。</p>
+            <img id="receipt-preview" class="receipt-preview" alt="收據預覽" hidden>
+            <p id="receipt-error" class="storage-warning" hidden></p>
+          </aside>
+
+          <div id="suggestion-box" class="suggestion-box" hidden>
+            <strong>此時段已滿，可以改選以下尚有空位的時段：</strong>
+            <div id="suggestion-list" class="suggestion-list"></div>
+          </div>
+          <p id="register-success" class="success-note" hidden></p>
+          <button class="primary-button register-submit" type="submit">確認登記</button>
+        </form>
+      </section>
+
+      <section id="screen-login" data-screen="login" hidden>
+        <form id="login-form" class="form-panel login-panel">
+          <h2>後台登入</h2>
+          <button type="button" id="login-help-open" class="text-button">如何登入？</button>
+          <label>
+            帳號
+            <input name="username" type="text" value="admin" autocomplete="username" required>
+          </label>
+          <label>
+            密碼
+            <input name="password" type="password" value="admin1234" autocomplete="current-password" required>
+          </label>
+          <p id="login-error" class="storage-warning" hidden></p>
+          <button class="primary-button" type="submit">登入</button>
+        </form>
+      </section>
+
+      <section id="screen-calendar" data-screen="calendar" hidden>
+        <div class="panel-heading">
+          <div>
+            <h2>時段與預約</h2>
+            <p id="calendar-caption">本月課堂</p>
+          </div>
+          <div class="panel-tools">
+            <button type="button" id="month-prev" class="export-button">上一月</button>
+            <button type="button" id="month-next" class="export-button">下一月</button>
+          </div>
+        </div>
+        <div class="weekday-row" aria-hidden="true">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div id="calendar-grid" class="calendar-grid"></div>
+        <section id="day-detail" class="booking-panel" aria-live="polite"></section>
+      </section>
+
+      <section id="screen-courses" data-screen="courses" hidden>
+        <div class="content-grid">
+          <form id="course-form" class="form-panel">
+            <div class="form-heading">
+              <span class="form-icon" aria-hidden="true">＋</span>
+              <div>
+                <h2>新增課程</h2>
+                <p>課程會出現在學生登記表</p>
+              </div>
+            </div>
+            <label>
+              課程名稱
+              <input name="name" type="text" maxlength="100" required placeholder="例如：人工智能入門">
+            </label>
+            <label>
+              簡介
+              <input name="description" type="text" maxlength="500" placeholder="可選">
+            </label>
+            <label>
+              學費（HK$）
+              <input name="priceHkd" type="number" min="0.01" max="1000000" step="0.01" required placeholder="例如：480">
+            </label>
+            <button class="primary-button" type="submit">建立課程</button>
           </form>
-        </aside>
-      </div>
-      <footer>AI 學習中心 <span aria-hidden="true">·</span> 預約安全儲存於本機資料庫</footer>
+          <section class="booking-panel">
+            <h2>已建立課程</h2>
+            <div id="course-list" class="booking-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="screen-slots" data-screen="slots" hidden>
+        <form id="slot-form" class="form-panel slot-panel">
+          <div class="form-heading">
+            <span class="form-icon" aria-hidden="true">＋</span>
+            <div>
+              <h2>新增時段</h2>
+              <p>設定日期、時間與名額</p>
+            </div>
+          </div>
+          <label>
+            課程
+            <select name="courseId" id="slot-course" required>
+              <option value="">選擇課程</option>
+            </select>
+          </label>
+          <div class="form-row">
+            <label>
+              上課日期
+              <input name="date" type="date" required>
+            </label>
+            <label>
+              名額
+              <input name="capacity" type="number" min="1" max="500" step="1" value="4" required>
+            </label>
+          </div>
+          <div class="form-row">
+            <label>
+              開始
+              <input name="startTime" type="time" required>
+            </label>
+            <label>
+              結束
+              <input name="endTime" type="time" required>
+            </label>
+          </div>
+          <button class="primary-button" type="submit">建立時段</button>
+        </form>
+      </section>
+
+      <footer>AI 學習中心 <span aria-hidden="true">·</span> 預約與收據儲存於本機資料庫</footer>
     </main>
-    <nav class="mobile-tabs" aria-label="主要導覽">
-      <button type="button" data-tab="dashboard" aria-current="page">
-        <span aria-hidden="true">▤</span>
-        <span>儀表板</span>
-      </button>
-      <button type="button" data-tab="bookings">
-        <span aria-hidden="true">☷</span>
-        <span>預約</span>
-      </button>
-      <button type="button" data-tab="add">
-        <span aria-hidden="true">＋</span>
-        <span>新增</span>
-      </button>
+
+    <div id="login-help" class="dialog-backdrop" hidden>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="login-help-title">
+        <div class="dialog-heading">
+          <h2 id="login-help-title">如何登入？</h2>
+          <button type="button" id="login-help-close" class="text-button" aria-label="關閉">✕</button>
+        </div>
+        <ul>
+          <li><strong>admin</strong> / admin1234（示範管理員）</li>
+        </ul>
+        <p class="field-note">正式環境請以 ADMIN_PASSWORD 重設密碼。此帳號只限示範。</p>
+        <button type="button" id="login-help-dismiss" class="export-button">關閉</button>
+      </div>
+    </div>
+
+    <nav class="mobile-tabs" aria-label="手機導覽">
+      <button type="button" data-go="register"><span aria-hidden="true">＋</span><span>登記</span></button>
+      <button type="button" data-go="calendar" data-admin-nav hidden><span aria-hidden="true">▤</span><span>日曆</span></button>
+      <button type="button" data-go="courses" data-admin-nav hidden><span aria-hidden="true">☰</span><span>課程</span></button>
+      <button type="button" data-go="slots" data-admin-nav hidden><span aria-hidden="true">◷</span><span>時段</span></button>
+      <button type="button" data-go="login" id="mobile-login"><span aria-hidden="true">○</span><span>登入</span></button>
     </nav>
   </body>
 </html>
