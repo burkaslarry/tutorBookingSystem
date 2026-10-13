@@ -1,0 +1,20 @@
+services:
+  booking:
+    build: .
+    image: tutor-booking-system:local
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      PORT: "8000"
+      HOST: "0.0.0.0"
+      DATABASE_PATH: /app/data/bookings.db
+      UPLOADS_DIR: /app/data/uploads
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env before starting}
+    volumes:
+      - booking-data:/app/data
+
+volumes:
+  booking-data:

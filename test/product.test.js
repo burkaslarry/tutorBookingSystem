@@ -6,7 +6,6 @@ const { join } = require("node:path");
 const { once } = require("node:events");
 const { startServer, processDueReminders } = require("../server");
 const { hongKongParts } = require("../lib/time");
-const { signBody } = require("../lib/kpay");
 
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "tutor-product-"));
 const png = Buffer.from(
@@ -72,6 +71,7 @@ function futureDate(days) {
 function registrationForm({ slotId, email = "ming@example.com", file, filename, type }) {
   const form = new FormData();
   form.set("studentName", "陳小明");
+  form.set("companyName", "Example Company");
   form.set("phone", "91234567");
   form.set("email", email);
   form.set("slotId", slotId);
@@ -118,6 +118,7 @@ test("admin creates a course and slot, and the calendar lists the booking receip
   });
   assert.equal(created.status, 201);
   const { registration } = await created.json();
+  assert.equal(registration.companyName, "Example Company");
   assert.equal(registration.paymentMethod, "fps");
   assert.equal(registration.paymentStatus, "received");
   assert.equal(registration.emailStatus, "skipped");
@@ -128,6 +129,7 @@ test("admin creates a course and slot, and the calendar lists the booking receip
   const body = await calendar.json();
   const listed = body.slots.find((item) => item.id === slot.id);
   assert.equal(listed.registrations[0].studentName, "陳小明");
+  assert.equal(listed.registrations[0].companyName, "Example Company");
   assert.equal(listed.registrations[0].hasReceipt, true);
   assert.equal(listed.taken, 1);
 
@@ -210,108 +212,29 @@ test("suggests other open slots when the chosen slot is full", async () => {
   assert.ok(payload.suggestions.some((item) => item.courseName === "AI 專題指導"));
 });
 
-test("kpay checkout can be switched on, and a signed webhook confirms the seat", async () => {
-  const calls = [];
-  const fetchImpl = async (url, options) => {
-    calls.push({ url: String(url), body: options.body, headers: options.headers });
-    if (String(url).includes("api.resend.com")) {
-      return new Response(JSON.stringify({ id: "email_1" }), { status: 200 });
-    }
-    return new Response(JSON.stringify({
-      id: "pi_123",
-      amount: 48000,
-      currency: "HKD",
-      status: "requires_payment_method",
-      checkout_url: "https://pay.kpay-group.com/checkout/pi_123",
-    }), { status: 200 });
-  };
-  const directory = mkdtempSync(join(tmpdir(), "tutor-kpay-"));
-  const started = startServer({
-    databasePath: join(directory, "kpay.db"),
-    uploadsDir: join(directory, "uploads"),
-    port: 0,
-    adminPassword: "admin1234",
-    fetchImpl,
-    env: {
-      RESEND_API_KEY: "re_test_key",
-      RESEND_FROM: "AI 學習中心 <bookings@example.com>",
-      KPAY_ENABLED: "true",
-      KPAY_API_BASE: "https://merchant.example.test",
-      KPAY_MERCHANT_ID: "merchant",
-      KPAY_APP_ID: "app",
-      KPAY_API_SECRET: "api-secret",
-      KPAY_WEBHOOK_SECRET: "hook-secret",
-      PUBLIC_BASE_URL: "https://booking.example.test",
-    },
-  });
-  try {
-    if (!started.server.listening) await once(started.server, "listening");
-    const url = `http://127.0.0.1:${started.server.address().port}`;
-    const session = await login(url);
-    const course = await createCourse(url, session.token, "KPay 課程");
-    const slot = await createSlot(url, session.token, course.id, futureDate(8), 1);
-    const disabled = await fetch(`${await baseUrl()}/api/registrations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        studentName: "陳小明",
-        phone: "91234567",
-        email: "kpay-off@example.com",
-        slotId: slot.id,
-        paymentMethod: "kpay",
-      }),
-    });
-    assert.equal(disabled.status, 503);
-
-    const created = await fetch(`${url}/api/registrations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        studentName: "陳小明",
-        phone: "91234567",
-        email: "kpay@example.com",
-        slotId: slot.id,
-        paymentMethod: "kpay",
-      }),
-    });
-    assert.equal(created.status, 201);
-    const createdBody = await created.json();
-    assert.equal(createdBody.checkoutUrl, "https://pay.kpay-group.com/checkout/pi_123");
-    const intentCall = calls.find((call) => call.url === "https://merchant.example.test/v1/payment_intents");
-    assert.ok(intentCall);
-    assert.equal(intentCall.headers["X-KPay-Signature"], signBody("api-secret", intentCall.body));
-    assert.equal(JSON.parse(intentCall.body).amount, 48000);
-
-    const raw = JSON.stringify({
-      event: "payment_intent.succeeded",
-      data: { id: "pi_123", merchant_order_id: createdBody.registration.id, status: "succeeded" },
-    });
-    const webhook = await fetch(`${url}/api/payments/kpay/webhook`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-KPay-Signature": signBody("hook-secret", raw),
-      },
-      body: raw,
-    });
-    assert.equal(webhook.status, 200);
-    const status = await (await fetch(`${url}/api/public/registrations/${createdBody.registration.id}`)).json();
-    assert.equal(status.registration.paymentStatus, "paid");
-    assert.ok(calls.some((call) => call.url === "https://api.resend.com/emails" && call.body.includes("上課") === false && call.body.includes("已確認")));
-
-    const reminder = await processDueReminders(started.database, {
-      env: { ...started.env, REMINDER_HOURS_BEFORE: "240" },
-      fetchImpl,
-      now: new Date(),
-    });
-    assert.equal(reminder[0].status, "sent");
-    assert.ok(calls.some((call) => call.body.includes("提醒你準時出席")));
-  } finally {
-    await new Promise((resolve) => started.server.close(resolve));
+test("registration requires a company name and an FPS receipt", async () => {
+  const url = await baseUrl();
+  const session = await login(url);
+  const course = await createCourse(url, session.token, "Required fields");
+  const slot = await createSlot(url, session.token, course.id, futureDate(8), 1);
+  for (const companyName of [null, "   ", "x".repeat(121)]) {
+    const form = registrationForm({ slotId: slot.id, file: png, filename: "test.png", type: "image/png" });
+    if (companyName === null) form.delete("companyName");
+    else form.set("companyName", companyName);
+    const response = await fetch(`${url}/api/registrations`, { method: "POST", body: form });
+    assert.equal(response.status, 400);
   }
+  const form = registrationForm({ slotId: slot.id, file: png, filename: "test.png", type: "image/png" });
+  form.delete("receipt");
+  const response = await fetch(`${url}/api/registrations`, { method: "POST", body: form });
+  assert.equal(response.status, 400);
+  const accepted = await fetch(`${url}/api/registrations`, {
+    method: "POST", body: registrationForm({ slotId: slot.id, file: png, filename: "test.png", type: "image/png" }),
+  });
+  assert.equal(accepted.status, 201);
 });
 
-test("a failed kpay request does not keep the seat", async () => {
+test("KPay is rejected even with merchant settings and does not keep a seat", async () => {
   const started = startServer({
     databasePath: join(mkdtempSync(join(tmpdir(), "tutor-kpay-fail-")), "kpay.db"),
     port: 0,
@@ -344,7 +267,7 @@ test("a failed kpay request does not keep the seat", async () => {
         paymentMethod: "kpay",
       }),
     });
-    assert.equal(failed.status, 502);
+    assert.equal(failed.status, 400);
     const booked = await fetch(`${url}/api/registrations`, {
       method: "POST",
       body: registrationForm({ slotId: slot.id, file: png, filename: "after.png", type: "image/png" }),

@@ -21,7 +21,8 @@ const suggestionBox = document.querySelector("#suggestion-box");
 const suggestionList = document.querySelector("#suggestion-list");
 const registerSuccess = document.querySelector("#register-success");
 const fpsInstructions = document.querySelector("#fps-instructions");
-const kpayNote = document.querySelector("#kpay-note");
+const registerSubmit = registerForm.querySelector("[type=submit]");
+let registrationBusy = false;
 const loginForm = document.querySelector("#login-form");
 const loginError = document.querySelector("#login-error");
 const loginHelp = document.querySelector("#login-help");
@@ -61,7 +62,7 @@ document.body.addEventListener("click", (event) => {
 
 window.addEventListener("hashchange", route);
 registerForm.addEventListener("submit", submitRegistration);
-registerForm.elements.paymentMethod.forEach((input) => input.addEventListener("change", syncPayment));
+
 courseSelect.addEventListener("change", () => fillSlots(courseSelect.value));
 slotSelect.addEventListener("change", showPrice);
 receiptInput.addEventListener("change", previewReceipt);
@@ -186,9 +187,7 @@ async function loadCatalog() {
     if (config.fpsPayeeName) notes.push(`收款人：${config.fpsPayeeName}`);
     if (config.fpsIdentifier) notes.push(`轉數快識別碼：${config.fpsIdentifier}`);
     fpsInstructions.textContent = notes.join(" ");
-    kpayNote.textContent = config.kpayReady
-      ? "選擇 KPay 後會前往付款頁完成付款。"
-      : "KPay 尚未啟用。請使用轉數快上載收據，或於環境變數設定商戶資料後再開通。";
+
   } catch (error) {
     setFlash(error.message);
     catalog = { courses: [], slots: [] };
@@ -237,9 +236,12 @@ function showPrice() {
 }
 
 function syncPayment() {
-  const fps = registerForm.elements.paymentMethod.value === "fps";
-  receiptInput.required = fps;
-  document.querySelector(".upload-panel").classList.toggle("is-optional", !fps);
+  const file = receiptInput.files?.[0];
+  const extension = file?.name.split(".").pop()?.toLowerCase();
+  const valid = file && file.size > 0 && file.size <= 5 * 1024 * 1024
+    && ["png", "jpg", "jpeg"].includes(extension)
+    && (!file.type || ["image/png", "image/jpeg"].includes(file.type));
+  registerSubmit.disabled = registrationBusy || !valid;
 }
 
 function previewReceipt() {
@@ -248,10 +250,13 @@ function previewReceipt() {
   previewUrl = "";
   receiptPreview.hidden = true;
   const file = receiptInput.files?.[0];
+  syncPayment();
   if (!file) return;
   const extension = file.name.split(".").pop()?.toLowerCase();
-  if (!["png", "jpg", "jpeg"].includes(extension) || file.size > 5 * 1024 * 1024) {
+  if (!["png", "jpg", "jpeg"].includes(extension) || file.size === 0 || file.size > 5 * 1024 * 1024
+    || (file.type && !["image/png", "image/jpeg"].includes(file.type))) {
     receiptInput.value = "";
+    syncPayment();
     receiptError.hidden = false;
     receiptError.textContent = "收據只接受 5MB 以內的 .png 或 .jpeg。";
     return;
@@ -267,23 +272,12 @@ async function submitRegistration(event) {
   suggestionList.replaceChildren();
   registerSuccess.hidden = true;
   if (!registerForm.reportValidity()) return;
-  const paymentMethod = registerForm.elements.paymentMethod.value;
-  const registrationBody = paymentMethod === "kpay"
-    ? JSON.stringify({
-      studentName: registerForm.elements.studentName.value.trim(),
-      phone: registerForm.elements.phone.value.trim(),
-      email: registerForm.elements.email.value.trim(),
-      slotId: slotSelect.value,
-      paymentMethod: "kpay",
-    })
-    : new FormData(registerForm);
+  syncPayment();
+  if (registerSubmit.disabled) return;
+  const registrationBody = new FormData(registerForm);
   setBusy(registerForm, true);
   try {
     const data = await api("/api/registrations", { method: "POST", body: registrationBody });
-    if (data.checkoutUrl) {
-      window.location.assign(data.checkoutUrl);
-      return;
-    }
     const registration = data.registration;
     registerSuccess.hidden = false;
     registerSuccess.textContent = `已確認 ${registration.studentName} 的 ${registration.courseName}（${dateLabel(registration.date)} ${registration.startTime}）。請準時出席。`;
@@ -329,7 +323,7 @@ async function showPaymentReturn(id) {
     registerSuccess.hidden = false;
     registerSuccess.textContent = paid
       ? `${registration.courseName} 付款已確認。請於 ${dateLabel(registration.date)} ${registration.startTime} 出席。`
-      : "付款尚未完成。若你已離開 KPay 頁面，請再試一次或改用轉數快。";
+      : "付款尚未完成。請聯絡中心確認轉數快付款。";
   } catch (error) {
     setFlash(error.message);
   }
@@ -525,7 +519,10 @@ function registrationRow(registration) {
   const contact = document.createElement("p");
   contact.className = "student-phone";
   contact.textContent = `${registration.phone} · ${registration.email}`;
-  who.append(name, contact);
+  const company = document.createElement("p");
+  company.className = "student-phone";
+  company.textContent = registration.companyName || "";
+  who.append(name, company, contact);
   const pay = document.createElement("div");
   const status = document.createElement("span");
   status.className = "status-pill status-pending";
@@ -602,10 +599,11 @@ async function api(path, options = {}) {
 }
 
 function setBusy(form, busy) {
+  if (form === registerForm) registrationBusy = busy;
   form.querySelectorAll("input, select, button, textarea").forEach((element) => {
     element.disabled = busy;
   });
-  if (!busy) syncPayment();
+  syncPayment();
 }
 
 function setFlash(message) {
