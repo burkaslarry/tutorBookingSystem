@@ -17,14 +17,6 @@ function Invoke-Docker {
     if ($LASTEXITCODE -ne 0) { throw "Docker command failed: $($Arguments[0])" }
 }
 
-function Read-OneLine {
-    param([string]$Prompt, [string]$Default = '')
-    $value = (Read-Host $Prompt).Trim()
-    if (-not $value) { $value = $Default }
-    if ($value -match "[\r\n\x00]") { throw 'Use a single line for this setting.' }
-    return $value
-}
-
 function Get-DockerOS {
     # Windows PowerShell 5.1 can treat native stderr as a terminating error.
     # Docker may emit stderr while its engine is still starting.
@@ -82,19 +74,16 @@ try {
         $securePassword = Read-Host 'Choose the admin password (at least 12 characters)' -AsSecureString
         $password = [Net.NetworkCredential]::new('', $securePassword).Password
         if ($password.Length -lt 12 -or $password -match "[\r\n\x00]") { throw 'Use a password of at least 12 characters, with no line breaks.' }
-        $payee = Read-OneLine 'FPS payee name'
-        $fps = Read-OneLine 'FPS identifier / phone number'
-        if (-not $payee -or -not $fps) { throw 'FPS payee name and identifier are required for students to pay.' }
         $settings = @(
             'PORT=8000', 'HOST=0.0.0.0', 'DATABASE_PATH=/app/data/bookings.db',
             'UPLOADS_DIR=/app/data/uploads', 'ADMIN_USERNAME=admin',
-            "ADMIN_PASSWORD=$password", "FPS_PAYEE_NAME=$payee", "FPS_IDENTIFIER=$fps"
+            "ADMIN_PASSWORD=$password"
         )
         [IO.File]::WriteAllLines($ConfigFile, $settings, [Text.UTF8Encoding]::new($false))
         $password = $null
         $settings = $null
     } else {
-        Write-Host 'Keeping the existing admin password and FPS configuration.'
+        Write-Host 'Keeping the existing admin password.'
     }
 
     Write-Host 'Checking the included Docker image...'

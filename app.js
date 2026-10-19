@@ -1,8 +1,8 @@
 const AUTH_KEY = "tutor_auth_session";
 const SCREEN_COPY = {
-  register: ["學生登記", "選擇課程時段，先以轉數快付款並上載收據。"],
+  register: ["學生登記", "選擇課程時段，並上載 .jpg 付款證明。"],
   login: ["後台登入", "管理員可建立課程、時段，並查看日曆與收據。"],
-  calendar: ["預約日曆", "查看每個時段的名額、學生與轉數快收據。"],
+  calendar: ["預約日曆", "查看每個時段的名額、學生與付款證明。"],
   courses: ["課程", "建立學生可以預約的課程。"],
   slots: ["時段", "為課程設定上課日期、時間與名額。"],
 };
@@ -20,7 +20,6 @@ const receiptError = document.querySelector("#receipt-error");
 const suggestionBox = document.querySelector("#suggestion-box");
 const suggestionList = document.querySelector("#suggestion-list");
 const registerSuccess = document.querySelector("#register-success");
-const fpsInstructions = document.querySelector("#fps-instructions");
 const registerSubmit = registerForm.querySelector("[type=submit]");
 let registrationBusy = false;
 const loginForm = document.querySelector("#login-form");
@@ -182,12 +181,6 @@ async function logout() {
 async function loadCatalog() {
   try {
     catalog = await api("/api/public/catalog");
-    const config = await api("/api/public/config");
-    const notes = ["請先以轉數快（FPS）付款，再上載 .png 或 .jpeg 收據。"];
-    if (config.fpsPayeeName) notes.push(`收款人：${config.fpsPayeeName}`);
-    if (config.fpsIdentifier) notes.push(`轉數快識別碼：${config.fpsIdentifier}`);
-    fpsInstructions.textContent = notes.join(" ");
-
   } catch (error) {
     setFlash(error.message);
     catalog = { courses: [], slots: [] };
@@ -239,8 +232,8 @@ function syncPayment() {
   const file = receiptInput.files?.[0];
   const extension = file?.name.split(".").pop()?.toLowerCase();
   const valid = file && file.size > 0 && file.size <= 5 * 1024 * 1024
-    && ["png", "jpg", "jpeg"].includes(extension)
-    && (!file.type || ["image/png", "image/jpeg"].includes(file.type));
+    && ["jpg", "jpeg"].includes(extension)
+    && (!file.type || file.type === "image/jpeg");
   registerSubmit.disabled = registrationBusy || !valid;
 }
 
@@ -253,12 +246,12 @@ function previewReceipt() {
   syncPayment();
   if (!file) return;
   const extension = file.name.split(".").pop()?.toLowerCase();
-  if (!["png", "jpg", "jpeg"].includes(extension) || file.size === 0 || file.size > 5 * 1024 * 1024
-    || (file.type && !["image/png", "image/jpeg"].includes(file.type))) {
+  if (!["jpg", "jpeg"].includes(extension) || file.size === 0 || file.size > 5 * 1024 * 1024
+    || (file.type && file.type !== "image/jpeg")) {
     receiptInput.value = "";
     syncPayment();
     receiptError.hidden = false;
-    receiptError.textContent = "收據只接受 5MB 以內的 .png 或 .jpeg。";
+    receiptError.textContent = "付款證明只接受 5MB 以內的 .jpg。";
     return;
   }
   previewUrl = URL.createObjectURL(file);
@@ -533,7 +526,7 @@ function registrationRow(registration) {
     const frame = document.createElement("div");
     frame.className = "receipt-frame";
     const image = document.createElement("img");
-    image.alt = `${registration.studentName} 的轉數快收據`;
+    image.alt = `${registration.studentName} 的付款證明`;
     image.className = "receipt-preview";
     frame.append(image);
     row.append(frame);
@@ -560,7 +553,7 @@ async function loadReceipt(id, image) {
 
 function paymentLabel(registration) {
   const labels = {
-    received: "已收到轉數快收據",
+    received: "已收到付款證明",
     paid: "KPay 已付款",
     pending: "KPay 待付款",
     failed: "付款失敗",

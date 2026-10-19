@@ -40,7 +40,7 @@ test("MySQL preserves company/receipt across restart and serializes the last sea
   async function login() {
     return (await (await api("/api/auth/login", { username: "admin", password: env.ADMIN_PASSWORD })).json()).token;
   }
-  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
   try {
     let token = await login();
     const course = (await (await api("/api/admin/courses", { name: `MySQL ${randomUUID()}`, description: "", priceHkd: 480 }, token, 201)).json()).course;
@@ -49,7 +49,7 @@ test("MySQL preserves company/receipt across restart and serializes the last sea
     function form(email) {
       const body = new FormData();
       for (const [key, value] of Object.entries({ studentName: "MySQL Student", companyName: "公司測試 🐱", phone: "91234567", email, slotId: slot.id, paymentMethod: "fps" })) body.set(key, value);
-      body.set("receipt", new File([png], "receipt.png", { type: "image/png" }));
+      body.set("receipt", new File([jpeg], "receipt.jpg", { type: "image/jpeg" }));
       return body;
     }
     const missing = form("missing@example.com");
@@ -66,7 +66,7 @@ test("MySQL preserves company/receipt across restart and serializes the last sea
     const registration = (await responses.find(r => r.status === 201).json()).registration;
     assert.equal(registration.companyName, "公司測試 🐱");
     const receipt = await api(`/api/admin/registrations/${registration.id}/receipt`, null, token);
-    assert.deepEqual(Buffer.from(await receipt.arrayBuffer()), png);
+    assert.deepEqual(Buffer.from(await receipt.arrayBuffer()), jpeg);
     const denied = await fetch(base + `/api/admin/registrations/${registration.id}/receipt`);
     assert.equal(denied.status, 401);
     assert.deepEqual(readdirSync(uploadsDir), [], "MySQL receipts must not depend on local files");
@@ -78,6 +78,6 @@ test("MySQL preserves company/receipt across restart and serializes the last sea
     assert.equal(saved.taken, 1);
     assert.equal(saved.registrations[0].companyName, "公司測試 🐱");
     const persisted = await api(`/api/admin/registrations/${registration.id}/receipt`, null, token);
-    assert.deepEqual(Buffer.from(await persisted.arrayBuffer()), png);
+    assert.deepEqual(Buffer.from(await persisted.arrayBuffer()), jpeg);
   } finally { await close(); }
 });

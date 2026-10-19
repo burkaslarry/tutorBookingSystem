@@ -19,7 +19,7 @@ const { server, database } = startServer({
   uploadsDir: join(temporaryDirectory, "uploads"),
   port: 0,
   adminPassword: "admin1234",
-  env: { RESEND_API_KEY: "", KPAY_ENABLED: "false", FPS_PAYEE_NAME: "AI 學習中心", FPS_IDENTIFIER: "1234567" },
+  env: { RESEND_API_KEY: "", KPAY_ENABLED: "false" },
 });
 
 after(() => new Promise((resolve) => server.close(resolve)));
@@ -109,12 +109,13 @@ test("admin creates a course and slot, and the calendar lists the booking receip
   const course = await createCourse(url, session.token, "人工智能入門");
   const slot = await createSlot(url, session.token, course.id, futureDate(3), 2);
   const config = await (await fetch(`${url}/api/public/config`)).json();
-  assert.equal(config.fpsPayeeName, "AI 學習中心");
   assert.equal(config.kpayReady, false);
+  assert.equal(config.fpsPayeeName, undefined);
+  assert.equal(config.fpsIdentifier, undefined);
 
   const created = await fetch(`${url}/api/registrations`, {
     method: "POST",
-    body: registrationForm({ slotId: slot.id, file: png, filename: "receipt.png", type: "image/png" }),
+    body: registrationForm({ slotId: slot.id, file: jpeg, filename: "receipt.jpg", type: "image/jpeg" }),
   });
   assert.equal(created.status, 201);
   const { registration } = await created.json();
@@ -137,8 +138,8 @@ test("admin creates a course and slot, and the calendar lists the booking receip
     headers: authHeaders(session.token),
   });
   assert.equal(receipt.status, 200);
-  assert.equal(receipt.headers.get("content-type"), "image/png");
-  assert.deepEqual(Buffer.from(await receipt.arrayBuffer()), png);
+  assert.equal(receipt.headers.get("content-type"), "image/jpeg");
+  assert.deepEqual(Buffer.from(await receipt.arrayBuffer()), jpeg);
 
   const hidden = await fetch(`${url}/api/admin/registrations/${registration.id}/receipt`);
   assert.equal(hidden.status, 401);
@@ -172,6 +173,18 @@ test("accepts a jpeg receipt and rejects other files", async () => {
     }),
   });
   assert.equal(rejected.status, 400);
+
+  const pngRejected = await fetch(`${url}/api/registrations`, {
+    method: "POST",
+    body: registrationForm({
+      slotId: slot.id,
+      email: "png@example.com",
+      file: png,
+      filename: "slip.png",
+      type: "image/png",
+    }),
+  });
+  assert.equal(pngRejected.status, 400);
 });
 
 test("suggests other open slots when the chosen slot is full", async () => {
@@ -188,9 +201,9 @@ test("suggests other open slots when the chosen slot is full", async () => {
     body: registrationForm({
       slotId: fullSlot.id,
       email: "first@example.com",
-      file: png,
-      filename: "first.png",
-      type: "image/png",
+      file: jpeg,
+      filename: "first.jpg",
+      type: "image/jpeg",
     }),
   });
   assert.equal(first.status, 201);
@@ -200,9 +213,9 @@ test("suggests other open slots when the chosen slot is full", async () => {
     body: registrationForm({
       slotId: fullSlot.id,
       email: "second@example.com",
-      file: png,
-      filename: "second.png",
-      type: "image/png",
+      file: jpeg,
+      filename: "second.jpg",
+      type: "image/jpeg",
     }),
   });
   assert.equal(second.status, 409);
@@ -218,18 +231,18 @@ test("registration requires a company name and an FPS receipt", async () => {
   const course = await createCourse(url, session.token, "Required fields");
   const slot = await createSlot(url, session.token, course.id, futureDate(8), 1);
   for (const companyName of [null, "   ", "x".repeat(121)]) {
-    const form = registrationForm({ slotId: slot.id, file: png, filename: "test.png", type: "image/png" });
+    const form = registrationForm({ slotId: slot.id, file: jpeg, filename: "test.jpg", type: "image/jpeg" });
     if (companyName === null) form.delete("companyName");
     else form.set("companyName", companyName);
     const response = await fetch(`${url}/api/registrations`, { method: "POST", body: form });
     assert.equal(response.status, 400);
   }
-  const form = registrationForm({ slotId: slot.id, file: png, filename: "test.png", type: "image/png" });
+  const form = registrationForm({ slotId: slot.id, file: jpeg, filename: "test.jpg", type: "image/jpeg" });
   form.delete("receipt");
   const response = await fetch(`${url}/api/registrations`, { method: "POST", body: form });
   assert.equal(response.status, 400);
   const accepted = await fetch(`${url}/api/registrations`, {
-    method: "POST", body: registrationForm({ slotId: slot.id, file: png, filename: "test.png", type: "image/png" }),
+    method: "POST", body: registrationForm({ slotId: slot.id, file: jpeg, filename: "test.jpg", type: "image/jpeg" }),
   });
   assert.equal(accepted.status, 201);
 });
@@ -270,7 +283,7 @@ test("KPay is rejected even with merchant settings and does not keep a seat", as
     assert.equal(failed.status, 400);
     const booked = await fetch(`${url}/api/registrations`, {
       method: "POST",
-      body: registrationForm({ slotId: slot.id, file: png, filename: "after.png", type: "image/png" }),
+      body: registrationForm({ slotId: slot.id, file: jpeg, filename: "after.jpg", type: "image/jpeg" }),
     });
     assert.equal(booked.status, 201);
   } finally {

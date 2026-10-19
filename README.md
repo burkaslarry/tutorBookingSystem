@@ -1,6 +1,6 @@
 # AI 課程預約及簽到
 
-供補習中心使用的預約系統。管理員登入後可建立課程與上課時段，並在日曆查看預約及轉數快收據。學生於公開登記表選擇時段，先以轉數快付款並上載收據。資料儲存於本機 SQLite。
+供補習中心使用的預約系統。管理員登入後可建立課程與上課時段，並在日曆查看預約及付款證明。學生於公開登記表選擇時段，並上載 .jpg 付款證明。資料儲存於本機 SQLite。
 
 ## 使用方式
 
@@ -27,7 +27,7 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-在 `.env` 加入 `ADMIN_PASSWORD=你的強密碼`，並設定 `FPS_PAYEE_NAME`、`FPS_IDENTIFIER`。然後啟動：
+在 `.env` 加入 `ADMIN_PASSWORD=你的強密碼`。然後啟動：
 
 ```powershell
 docker compose up -d --build
@@ -46,7 +46,7 @@ Windows 重啟後要啟動 Docker Desktop，容器才會自動恢復運作。
 
 `release/tutor-booking-windows-x64.zip` 包含已建立的 Linux amd64 Docker image、
 `Install.cmd`、`Install.ps1` 及使用說明。解壓後雙擊 `Install.cmd`，允許管理員權限，
-填寫管理員密碼及 FPS 收款資料即可啟動，目標電腦不用安裝 Node.js 或自行 build。
+填寫管理員密碼即可啟動，目標電腦不用安裝 Node.js 或自行 build。
 如未安裝 Docker Desktop，script 會嘗試用 winget 安裝；首次 Docker/WSL 設定可能需要重啟，
 重啟後再執行同一個 script。安裝包會檢查 image 校驗碼、使用獨立資料卷保留預約與收據，
 並設定 Docker Desktop 在 Windows 登入時啟動。適用 Docker Desktop 支援的 Windows 10/11 x64，
@@ -56,10 +56,10 @@ Windows 重啟後要啟動 Docker Desktop，容器才會自動恢復運作。
 
 - 管理員登入（Bearer session）
 - 建立課程與有名額的上課時段
-- 日曆查看時段、預約與轉數快收據
+- 日曆查看時段、預約與付款證明
 - 學生登記；時段已滿時建議其他尚有空位的課程或時段
-- 轉數快須先上載 .png 或 .jpeg 收據，收據與預約一併保存
-- 學生登記必須填寫公司名稱；只接受轉數快，選擇有效收據後才可提交
+- 學生須上載 .jpg 付款證明，證明與預約一併保存
+- 學生登記必須填寫公司名稱；選擇有效 .jpg 付款證明後才可提交
 - 預約確認及課前出席提醒電郵（Resend，需 `RESEND_API_KEY`）
 
 ## 環境變數
@@ -78,8 +78,6 @@ DB_NAME=資料庫全名（包括帳戶前綴）
 DB_USER=資料庫用戶全名（包括帳戶前綴）
 DB_PASSWORD=資料庫密碼
 ADMIN_PASSWORD=至少12字元的管理員密碼
-FPS_PAYEE_NAME=收款人名稱
-FPS_IDENTIFIER=轉數快識別碼
 ```
 
 GitHub 部署選擇此項目的部署分支、Node.js 24.x、根目錄 `./`。

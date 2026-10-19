@@ -29,7 +29,7 @@
         <div>
           <p class="eyebrow">課堂管理</p>
           <h1 id="page-title">學生登記</h1>
-          <p class="subtitle" id="page-subtitle">選擇課程時段，先以轉數快付款並上載收據。</p>
+          <p class="subtitle" id="page-subtitle">選擇課程時段，並上載 .jpg 付款證明。</p>
         </div>
         <p id="session-label" class="workspace-label" hidden></p>
       </section>
@@ -76,23 +76,22 @@
             </label>
             <p id="slot-price" class="field-note">請選擇時段以查看學費。</p>
             <input type="hidden" name="paymentMethod" value="fps">
-            <p class="field-note">付款方式：轉數快 FPS</p>
           </div>
 
           <aside class="form-panel upload-panel">
             <div class="form-heading">
               <span class="form-icon" aria-hidden="true">↥</span>
               <div>
-                <h2>轉數快收據</h2>
-                <p>請先付款並上載收據，才可提交登記</p>
+                <h2>付款證明</h2>
+                <p>請上載 .jpg，才可提交登記</p>
               </div>
             </div>
-            <p id="fps-instructions" class="field-note">請先以轉數快（FPS）付款，再上載 .png 或 .jpeg 收據。</p>
+            <p id="fps-instructions" class="field-note">請上載 .jpg 付款證明。</p>
             <label class="upload-control">
-              收據圖片
-              <input id="receipt-input" name="receipt" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" required>
+              付款證明
+              <input id="receipt-input" name="receipt" type="file" accept=".jpg,.jpeg,image/jpeg" required>
             </label>
-            <p class="field-note">只接受 .png 與 .jpeg，最大 5MB。</p>
+            <p class="field-note">只接受 .jpg，最大 5MB。</p>
             <img id="receipt-preview" class="receipt-preview" alt="收據預覽" hidden>
             <p id="receipt-error" class="storage-warning" hidden></p>
           </aside>

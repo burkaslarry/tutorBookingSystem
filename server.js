@@ -236,9 +236,7 @@ function detectReceipt(filename, contentType, data) {
   const suffix = extname(filename || "").toLowerCase();
   const mime = String(contentType || "").split(";")[0].trim().toLowerCase();
   const typeOk = !mime || mime === "application/octet-stream";
-  const png = data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47;
   const jpeg = data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
-  if (png && suffix === ".png" && (typeOk || mime === "image/png")) return { mime: "image/png", suffix: ".png" };
   if (jpeg && (suffix === ".jpg" || suffix === ".jpeg") && (typeOk || mime === "image/jpeg")) {
     return { mime: "image/jpeg", suffix };
   }
@@ -621,9 +619,9 @@ function createRequestHandler(database, options) {
       throw httpError(400, "轉數快登記需要上載收據。");
     }
     const student = studentFields(fields);
-    if (!receipt) throw httpError(400, "請上載轉數快收據（.png 或 .jpeg）。");
+    if (!receipt) throw httpError(400, "請上載 .jpg 付款證明。");
     const image = detectReceipt(basename(receipt.filename), receipt.contentType, receipt.data);
-    if (!image) throw httpError(400, "收據只接受 .png 或 .jpeg。");
+    if (!image) throw httpError(400, "付款證明只接受 .jpg。");
     image.data = receipt.data;
     const registration = await reserve(student, now, {
       method: "fps",
@@ -694,8 +692,6 @@ function createRequestHandler(database, options) {
 
       if (request.method === "GET" && url.pathname === "/api/public/config") {
         return sendJson(response, 200, {
-          fpsPayeeName: String(env.FPS_PAYEE_NAME || "").trim(),
-          fpsIdentifier: String(env.FPS_IDENTIFIER || "").trim(),
           kpayReady: false,
           currency: "HKD",
         });
@@ -750,7 +746,7 @@ function createRequestHandler(database, options) {
           const body = await readBody(request, MAX_RECEIPT_BYTES + 512 * 1024);
           return await registerFps(parseMultipart(body, contentType), response, now);
         }
-        return sendJson(response, 400, { error: "請先以轉數快付款並上載收據。" });
+        return sendJson(response, 400, { error: "請上載 .jpg 付款證明。" });
       }
 
       if (request.method === "POST" && url.pathname === "/api/payments/kpay/webhook") {
