@@ -536,11 +536,17 @@ function registrationRow(registration) {
   return row;
 }
 
+const API_BASE = import.meta.env?.VITE_API_BASE || "";
+
+function apiUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
 async function loadReceipt(id, image) {
   const session = getSession();
   if (!session) return;
   try {
-    const response = await fetch(`/api/admin/registrations/${encodeURIComponent(id)}/receipt`, {
+    const response = await fetch(apiUrl(`/api/admin/registrations/${encodeURIComponent(id)}/receipt`), {
       headers: { Authorization: `Bearer ${session.token}` },
     });
     if (!response.ok) return;
@@ -576,7 +582,7 @@ async function api(path, options = {}) {
     headers["Content-Type"] = "application/json";
   }
   if (options.auth && getSession()?.token) headers.Authorization = `Bearer ${getSession().token}`;
-  const response = await fetch(path, { method: options.method || "GET", headers, body: options.body });
+  const response = await fetch(apiUrl(path), { method: options.method || "GET", headers, body: options.body });
   const isJson = (response.headers.get("content-type") || "").includes("json");
   const data = isJson ? await response.json() : {};
   if (response.status === 401 && options.auth) {

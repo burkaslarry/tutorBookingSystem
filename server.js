@@ -431,6 +431,24 @@ async function processDueReminders(database, options = {}) {
   return results;
 }
 
+function applyCors(request, response) {
+  const origin = request.headers.origin;
+  if (!origin) return false;
+  let hostname = "";
+  try {
+    hostname = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+  const allowed = hostname === "localhost" || hostname === "127.0.0.1" || hostname.endsWith(".hostingersite.com");
+  if (!allowed) return false;
+  response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Vary", "Origin");
+  response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  return true;
+}
+
 function createRequestHandler(database, options) {
   const env = options.env;
   const fetchImpl = options.fetchImpl || globalThis.fetch;
@@ -693,6 +711,11 @@ function createRequestHandler(database, options) {
 
   return async (request, response) => {
     const url = new URL(request.url, "http://localhost");
+    if (applyCors(request, response) && request.method === "OPTIONS") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
     try {
       if (request.method === "GET" && url.pathname === "/api/bookings") {
         return sendJson(response, 200, { bookings: await listBookings.all() });
