@@ -29,7 +29,7 @@
         <div>
           <p class="eyebrow">課堂管理</p>
           <h1 id="page-title">學生登記</h1>
-          <p class="subtitle" id="page-subtitle">選擇課程時段，先以轉數快付款並上載收據。</p>
+          <p class="subtitle" id="page-subtitle">選擇課程時段，並上載 .jpg 付款證明。</p>
         </div>
         <p id="session-label" class="workspace-label" hidden></p>
       </section>
@@ -49,6 +49,10 @@
             <label>
               學生姓名
               <input name="studentName" type="text" placeholder="例如：陳小明" maxlength="60" autocomplete="name" required>
+            </label>
+            <label>
+              Company Name（公司名稱，必填）
+              <input name="companyName" type="text" placeholder="請填寫公司名稱" maxlength="120" autocomplete="organization" required>
             </label>
             <label>
               聯絡電話
@@ -71,34 +75,23 @@
               </select>
             </label>
             <p id="slot-price" class="field-note">請選擇時段以查看學費。</p>
-            <fieldset class="payment-methods">
-              <legend>付款方式</legend>
-              <label class="radio-row">
-                <input type="radio" name="paymentMethod" value="fps" checked>
-                <span>轉數快 FPS</span>
-              </label>
-              <label class="radio-row">
-                <input type="radio" name="paymentMethod" value="kpay">
-                <span>KPay</span>
-              </label>
-            </fieldset>
-            <p id="kpay-note" class="field-note">選擇 KPay 後會前往付款頁。尚未啟用時請使用轉數快。</p>
+            <input type="hidden" name="paymentMethod" value="fps">
           </div>
 
           <aside class="form-panel upload-panel">
             <div class="form-heading">
               <span class="form-icon" aria-hidden="true">↥</span>
               <div>
-                <h2>轉數快收據</h2>
-                <p>上載控制在登記表旁邊</p>
+                <h2>付款證明</h2>
+                <p>請上載 .jpg，才可提交登記</p>
               </div>
             </div>
-            <p id="fps-instructions" class="field-note">請先以轉數快（FPS）付款，再上載 .png 或 .jpeg 收據。</p>
+            <p id="fps-instructions" class="field-note">請上載 .jpg 付款證明。</p>
             <label class="upload-control">
-              收據圖片
-              <input id="receipt-input" name="receipt" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" required>
+              付款證明
+              <input id="receipt-input" name="receipt" type="file" accept=".jpg,.jpeg,image/jpeg" required>
             </label>
-            <p class="field-note">只接受 .png 與 .jpeg，最大 5MB。</p>
+            <p class="field-note">只接受 .jpg，最大 5MB。</p>
             <img id="receipt-preview" class="receipt-preview" alt="收據預覽" hidden>
             <p id="receipt-error" class="storage-warning" hidden></p>
           </aside>
@@ -108,7 +101,7 @@
             <div id="suggestion-list" class="suggestion-list"></div>
           </div>
           <p id="register-success" class="success-note" hidden></p>
-          <button class="primary-button register-submit" type="submit">確認登記</button>
+          <button class="primary-button register-submit" type="submit" disabled>確認登記</button>
         </form>
       </section>
 

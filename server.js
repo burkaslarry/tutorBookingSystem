@@ -7,7 +7,7 @@ const { makePasswordRecord, verifyPassword, newSessionToken } = require("./lib/a
 const { parseMultipart } = require("./lib/multipart");
 const { hongKongParts, isBookable, formatSlotWhen, monthRange } = require("./lib/time");
 const { confirmationMessage, reminderMessage, sendEmail } = require("./lib/email");
-const { kpayConfig, kpayReadiness, createPaymentIntent, verifyWebhook, webhookOutcome } = require("./lib/kpay");
+const { kpayConfig, verifyWebhook, webhookOutcome } = require("./lib/kpay");
 const { selectDueReminders } = require("./lib/reminders");
 
 const ROOT = __dirname;
@@ -75,6 +75,7 @@ function openDatabase(databasePath) {
       id TEXT PRIMARY KEY,
       slot_id TEXT NOT NULL REFERENCES slots(id),
       student_name TEXT NOT NULL,
+      company_name TEXT NOT NULL DEFAULT '',
       phone TEXT NOT NULL,
       email TEXT NOT NULL,
       status TEXT NOT NULL,
@@ -94,14 +95,17 @@ function openDatabase(databasePath) {
     );
     CREATE INDEX IF NOT EXISTS registrations_slot_idx ON registrations (slot_id);
   `);
+  if (!database.prepare("PRAGMA table_info(registrations)").all().some((column) => column.name === "company_name")) {
+    database.exec("ALTER TABLE registrations ADD COLUMN company_name TEXT NOT NULL DEFAULT ''");
+  }
   return database;
 }
 
-function seedAdmin(database, { username, password, reset }) {
-  const existing = database.prepare("SELECT id FROM admins WHERE username = ?").get(username);
+async function seedAdmin(database, { username, password, reset }) {
+  const existing = await database.prepare("SELECT id FROM admins WHERE username = ?").get(username);
   if (!existing) {
     const record = makePasswordRecord(password);
-    database.prepare(`
+    await database.prepare(`
       INSERT INTO admins (username, password_salt, password_hash, role, is_active)
       VALUES (?, ?, ?, 'ADMIN', 1)
     `).run(username, record.salt, record.hash);
@@ -109,7 +113,7 @@ function seedAdmin(database, { username, password, reset }) {
   }
   if (!reset) return;
   const record = makePasswordRecord(password);
-  database.prepare(`
+  await database.prepare(`
     UPDATE admins SET password_salt = ?, password_hash = ?, is_active = 1 WHERE id = ?
   `).run(record.salt, record.hash, existing.id);
 }
@@ -232,9 +236,7 @@ function detectReceipt(filename, contentType, data) {
   const suffix = extname(filename || "").toLowerCase();
   const mime = String(contentType || "").split(";")[0].trim().toLowerCase();
   const typeOk = !mime || mime === "application/octet-stream";
-  const png = data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47;
   const jpeg = data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
-  if (png && suffix === ".png" && (typeOk || mime === "image/png")) return { mime: "image/png", suffix: ".png" };
   if (jpeg && (suffix === ".jpg" || suffix === ".jpeg") && (typeOk || mime === "image/jpeg")) {
     return { mime: "image/jpeg", suffix };
   }
@@ -270,6 +272,7 @@ function mapRegistration(row) {
     id: row.id,
     slotId: row.slot_id,
     studentName: row.student_name,
+    companyName: row.company_name || "",
     phone: row.phone,
     email: row.email,
     status: row.status,
@@ -286,10 +289,11 @@ function mapRegistration(row) {
   };
 }
 
-function withTransaction(database, fn) {
+async function withTransaction(database, fn) {
+  if (database.transaction) return database.transaction(fn);
   database.exec("BEGIN IMMEDIATE");
   try {
-    const result = fn();
+    const result = await fn();
     database.exec("COMMIT");
     return result;
   } catch (error) {
@@ -317,7 +321,7 @@ async function sendConfirmation(database, env, fetchImpl, registration) {
     console.error(error);
     result = { status: "failed", reason: "network" };
   }
-  database.prepare(`
+  await database.prepare(`
     UPDATE registrations
     SET confirmation_email_status = ?, confirmation_email_id = ?
     WHERE id = ?
@@ -329,12 +333,12 @@ async function processDueReminders(database, options = {}) {
   const env = options.env || process.env;
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const now = options.now || new Date();
-  const due = selectDueReminders(database, now, leadHoursFrom(env));
+  const due = await selectDueReminders(database, now, leadHoursFrom(env));
   const results = [];
   for (const row of due) {
     if (!String(env.RESEND_API_KEY || "").trim()) {
       if (row.reminder_email_status !== "skipped") {
-        database.prepare(`
+        await database.prepare(`
           UPDATE registrations SET reminder_email_status = ? WHERE id = ?
         `).run("skipped", row.id);
       }
@@ -356,13 +360,13 @@ async function processDueReminders(database, options = {}) {
       result = { status: "failed" };
     }
     if (result.status === "sent") {
-      database.prepare(`
+      await database.prepare(`
         UPDATE registrations
         SET reminder_email_status = 'sent', reminder_email_id = ?, reminder_sent_at = ?
         WHERE id = ?
       `).run(result.id || "", now.toISOString(), row.id);
     } else {
-      database.prepare("UPDATE registrations SET reminder_email_status = ? WHERE id = ?").run(result.status, row.id);
+      await database.prepare("UPDATE registrations SET reminder_email_status = ? WHERE id = ?").run(result.status, row.id);
     }
     results.push({ id: row.id, status: result.status });
   }
@@ -432,7 +436,7 @@ function createRequestHandler(database, options) {
     ORDER BY s.date, s.start_time
   `);
   const listMonthRegistrations = database.prepare(`
-    SELECT r.id, r.slot_id, r.student_name, r.phone, r.email, r.status, r.payment_method,
+    SELECT r.id, r.slot_id, r.student_name, r.company_name, r.phone, r.email, r.status, r.payment_method,
            r.payment_status, r.amount_cents, r.receipt_path, r.confirmation_email_status,
            r.kpay_checkout_url, r.created_at, s.date, s.start_time, s.end_time, c.name AS course_name
     FROM registrations r
@@ -463,9 +467,9 @@ function createRequestHandler(database, options) {
   `);
   const insertRegistration = database.prepare(`
     INSERT INTO registrations (
-      id, slot_id, student_name, phone, email, status, payment_method, payment_status,
+      id, slot_id, student_name, company_name, phone, email, status, payment_method, payment_status,
       amount_cents, receipt_path, receipt_mime, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const findRegistration = database.prepare(`
     SELECT r.*, s.date, s.start_time, s.end_time, c.name AS course_name
@@ -474,10 +478,7 @@ function createRequestHandler(database, options) {
     JOIN courses c ON c.id = s.course_id
     WHERE r.id = ?
   `);
-  const deleteRegistration = database.prepare("DELETE FROM registrations WHERE id = ?");
-  const updateKpay = database.prepare(`
-    UPDATE registrations SET kpay_intent_id = ?, kpay_checkout_url = ? WHERE id = ?
-  `);
+
   const markPaid = database.prepare(`
     UPDATE registrations SET status = 'confirmed', payment_status = 'paid' WHERE id = ?
   `);
@@ -485,29 +486,29 @@ function createRequestHandler(database, options) {
     UPDATE registrations SET status = 'cancelled', payment_status = 'failed' WHERE id = ?
   `);
 
-  function requireAdmin(request) {
+  async function requireAdmin(request) {
     const header = request.headers.authorization || "";
     if (!header.toLowerCase().startsWith("bearer ")) throw httpError(401, "請先登入。");
     const token = header.slice(7).trim();
-    const session = token ? getSession.get(token) : undefined;
+    const session = token ? await getSession.get(token) : undefined;
     if (!session || !session.is_active) throw httpError(401, "登入已失效，請再登入。");
     if (session.expires_at <= new Date().toISOString()) {
-      deleteSession.run(token);
+      await deleteSession.run(token);
       throw httpError(401, "登入已逾時，請再登入。");
     }
     return session;
   }
 
-  function takenBySlot(now) {
+  async function takenBySlot(now) {
     const counts = new Map();
-    for (const row of countTaken.all(holdCutoff(env, now))) counts.set(row.slot_id, row.taken);
+    for (const row of await countTaken.all(holdCutoff(env, now))) counts.set(row.slot_id, row.taken);
     return counts;
   }
 
-  function suggestionsFor(chosen, now) {
-    const counts = takenBySlot(now);
+  async function suggestionsFor(chosen, now) {
+    const counts = await takenBySlot(now);
     const today = hongKongParts(now).date;
-    const rows = listFutureSlots.all(today).filter((row) => row.id !== chosen.id && isBookable(row.date, row.start_time, now));
+    const rows = (await listFutureSlots.all(today)).filter((row) => row.id !== chosen.id && isBookable(row.date, row.start_time, now));
     const open = rows.flatMap((row) => {
       const seatsLeft = row.capacity - (counts.get(row.id) || 0);
       if (seatsLeft <= 0) return [];
@@ -532,37 +533,41 @@ function createRequestHandler(database, options) {
 
   function studentFields(input) {
     const studentName = String(input.studentName || "").trim();
+    const companyName = String(input.companyName || "").trim();
+    if (!isText(companyName, 120)) throw httpError(400, "請填寫公司名稱（最多 120 字）。");
     const phone = String(input.phone || "").trim();
     const email = String(input.email || "").trim();
     const slotId = String(input.slotId || "").trim();
     if (!isText(studentName, 60) || !isText(phone, 30) || !isEmail(email) || !isText(slotId, 80)) {
       throw httpError(400, "登記資料不完整或格式不正確。");
     }
-    return { studentName, phone, email, slotId };
+    return { studentName, companyName, phone, email, slotId };
   }
 
-  function reserve(fields, now, payment) {
-    return withTransaction(database, () => {
-      const slot = slotWithCourse.get(fields.slotId);
+  async function reserve(fields, now, payment) {
+    return withTransaction(database, async () => {
+      if (database.lockSlot) await database.lockSlot(fields.slotId);
+      const slot = await slotWithCourse.get(fields.slotId);
       if (!slot || !slot.active) throw httpError(404, "找不到可預約的時段。");
       if (!isBookable(slot.date, slot.start_time, now)) throw httpError(400, "此時段已結束或未開放。");
-      const taken = countSlotTaken.get(slot.id, holdCutoff(env, now)).taken;
+      const taken = (await countSlotTaken.get(slot.id, holdCutoff(env, now))).taken;
       if (taken >= slot.capacity) {
-        throw httpError(409, "此時段已滿。", { full: true, suggestions: suggestionsFor(slot, now) });
+        throw httpError(409, "此時段已滿。", { full: true, suggestions: await suggestionsFor(slot, now) });
       }
       const id = crypto.randomUUID();
       let receiptPath = "";
       let receiptMime = "";
       if (payment.receipt) {
-        receiptPath = saveReceipt(uploadsDir, id, payment.receipt);
+        receiptPath = database.kind === "mysql" ? `mysql:${id}` : saveReceipt(uploadsDir, id, payment.receipt);
         receiptMime = payment.receipt.mime;
       }
       const createdAt = now.toISOString();
       try {
-        insertRegistration.run(
+        await insertRegistration.run(
           id,
           slot.id,
           fields.studentName,
+          fields.companyName,
           fields.phone,
           fields.email,
           payment.status,
@@ -573,8 +578,9 @@ function createRequestHandler(database, options) {
           receiptMime || null,
           createdAt,
         );
+        if (database.saveReceipt && payment.receipt) await database.saveReceipt(id, payment.receipt);
       } catch (error) {
-        if (receiptPath) {
+        if (receiptPath && database.kind !== "mysql") {
           const full = storedPath(uploadsDir, receiptPath);
           if (full && existsSync(full)) unlinkSync(full);
         }
@@ -584,6 +590,7 @@ function createRequestHandler(database, options) {
         id,
         slot_id: slot.id,
         student_name: fields.studentName,
+        company_name: fields.companyName,
         phone: fields.phone,
         email: fields.email,
         status: payment.status,
@@ -612,11 +619,11 @@ function createRequestHandler(database, options) {
       throw httpError(400, "轉數快登記需要上載收據。");
     }
     const student = studentFields(fields);
-    if (!receipt) throw httpError(400, "請上載轉數快收據（.png 或 .jpeg）。");
+    if (!receipt) throw httpError(400, "請上載 .jpg 付款證明。");
     const image = detectReceipt(basename(receipt.filename), receipt.contentType, receipt.data);
-    if (!image) throw httpError(400, "收據只接受 .png 或 .jpeg。");
+    if (!image) throw httpError(400, "付款證明只接受 .jpg。");
     image.data = receipt.data;
-    const registration = reserve(student, now, {
+    const registration = await reserve(student, now, {
       method: "fps",
       status: "confirmed",
       paymentStatus: "received",
@@ -626,60 +633,17 @@ function createRequestHandler(database, options) {
     sendJson(response, 201, { registration });
   }
 
-  async function registerKpay(payload, request, response, now) {
-    if (payload.paymentMethod !== "kpay") throw httpError(400, "請選擇付款方式。");
-    const readiness = kpayReadiness(kpayConfig(env));
-    if (!readiness.ready) {
-      throw httpError(503, "KPay 尚未啟用。請先以轉數快付款。", { kpay: { ready: false, reason: readiness.reason } });
-    }
-    const student = studentFields(payload);
-    const registration = reserve(student, now, {
-      method: "kpay",
-      status: "pending",
-      paymentStatus: "pending",
-      receipt: null,
-    });
-    const base = publicBase(request, env);
-    let intent;
-    try {
-      intent = await createPaymentIntent({
-        config: kpayConfig(env),
-        fetchImpl,
-        order: {
-          amountCents: registration.amountCents,
-          registrationId: registration.id,
-          description: `${registration.courseName} ${registration.date} ${registration.startTime}`,
-          returnUrl: `${base}/?payment=return&registration=${encodeURIComponent(registration.id)}`,
-          notifyUrl: `${base}/api/payments/kpay/webhook`,
-          studentName: registration.studentName,
-          slotId: registration.slotId,
-          courseName: registration.courseName,
-        },
-      });
-    } catch (error) {
-      console.error(error);
-      intent = { ok: false, reason: "gateway_error" };
-    }
-    if (!intent.ok) {
-      deleteRegistration.run(registration.id);
-      throw httpError(502, "暫時無法建立 KPay 付款，請改用轉數快或稍後再試。", { kpay: { ready: true, reason: intent.reason } });
-    }
-    updateKpay.run(intent.intentId, intent.checkoutUrl, registration.id);
-    registration.checkoutUrl = intent.checkoutUrl;
-    sendJson(response, 201, { registration, checkoutUrl: intent.checkoutUrl });
-  }
-
   return async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     try {
       if (request.method === "GET" && url.pathname === "/api/bookings") {
-        return sendJson(response, 200, { bookings: listBookings.all() });
+        return sendJson(response, 200, { bookings: await listBookings.all() });
       }
 
       if (request.method === "POST" && url.pathname === "/api/bookings") {
         const booking = await readJson(request);
         if (!validateBooking(booking)) return sendJson(response, 400, { error: "預約資料不完整或格式不正確。" });
-        insertBooking.run(
+        await insertBooking.run(
           booking.id.trim(),
           booking.student.trim(),
           booking.phone.trim(),
@@ -695,7 +659,7 @@ function createRequestHandler(database, options) {
       if (request.method === "PATCH" && statusMatch) {
         const body = await readJson(request);
         if (!VALID_STATUSES.has(body.status)) return sendJson(response, 400, { error: "預約狀態不正確。" });
-        const result = updateStatus.run(body.status, decodeURIComponent(statusMatch[1]));
+        const result = await updateStatus.run(body.status, decodeURIComponent(statusMatch[1]));
         if (result.changes === 0) return sendJson(response, 404, { error: "找不到預約。" });
         return sendJson(response, 200, { status: body.status });
       }
@@ -704,43 +668,40 @@ function createRequestHandler(database, options) {
         const body = await readJson(request);
         const username = String(body.username || "").trim();
         const password = String(body.password || "");
-        const admin = findAdmin.get(username);
+        const admin = await findAdmin.get(username);
         if (!admin || !admin.is_active || !verifyPassword(password, admin.password_salt, admin.password_hash)) {
           return sendJson(response, 401, { error: "帳號或密碼不正確。" });
         }
         const token = newSessionToken();
         const expiresAt = new Date(Date.now() + SESSION_HOURS * 60 * 60 * 1000).toISOString();
-        insertSession.run(token, admin.id, expiresAt);
+        await insertSession.run(token, admin.id, expiresAt);
         return sendJson(response, 200, { token, username: admin.username, role: "ADMIN" });
       }
 
       if (request.method === "GET" && url.pathname === "/api/auth/me") {
-        const admin = requireAdmin(request);
+        const admin = await requireAdmin(request);
         return sendJson(response, 200, { token: admin.token, username: admin.username, role: "ADMIN" });
       }
 
       if (request.method === "POST" && url.pathname === "/api/auth/logout") {
         const header = request.headers.authorization || "";
         const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
-        if (token) deleteSession.run(token);
+        if (token) await deleteSession.run(token);
         return sendJson(response, 200, { ok: true });
       }
 
       if (request.method === "GET" && url.pathname === "/api/public/config") {
-        const readiness = kpayReadiness(kpayConfig(env));
         return sendJson(response, 200, {
-          fpsPayeeName: String(env.FPS_PAYEE_NAME || "").trim(),
-          fpsIdentifier: String(env.FPS_IDENTIFIER || "").trim(),
-          kpayReady: readiness.ready,
+          kpayReady: false,
           currency: "HKD",
         });
       }
 
       if (request.method === "GET" && url.pathname === "/api/public/catalog") {
         const now = new Date();
-        const counts = takenBySlot(now);
+        const counts = await takenBySlot(now);
         const today = hongKongParts(now).date;
-        const slots = listFutureSlots.all(today).flatMap((row) => {
+        const slots = (await listFutureSlots.all(today)).flatMap((row) => {
           if (!isBookable(row.date, row.start_time, now)) return [];
           const taken = counts.get(row.id) || 0;
           return [{
@@ -755,12 +716,12 @@ function createRequestHandler(database, options) {
             priceCents: row.price_cents,
           }];
         });
-        return sendJson(response, 200, { courses: listCourses.all().map(mapCourse), slots });
+        return sendJson(response, 200, { courses: (await listCourses.all()).map(mapCourse), slots });
       }
 
       const publicRegistration = url.pathname.match(/^\/api\/public\/registrations\/([^/]+)$/);
       if (request.method === "GET" && publicRegistration) {
-        const row = findRegistration.get(decodeURIComponent(publicRegistration[1]));
+        const row = await findRegistration.get(decodeURIComponent(publicRegistration[1]));
         if (!row) return sendJson(response, 404, { error: "找不到登記。" });
         const registration = mapRegistration(row);
         return sendJson(response, 200, {
@@ -785,14 +746,7 @@ function createRequestHandler(database, options) {
           const body = await readBody(request, MAX_RECEIPT_BYTES + 512 * 1024);
           return await registerFps(parseMultipart(body, contentType), response, now);
         }
-        const body = await readBody(request, 100_000);
-        let payload;
-        try {
-          payload = JSON.parse(body.toString("utf8") || "{}");
-        } catch {
-          return sendJson(response, 400, { error: "登記資料不完整或格式不正確。" });
-        }
-        return await registerKpay(payload, request, response, now);
+        return sendJson(response, 400, { error: "請上載 .jpg 付款證明。" });
       }
 
       if (request.method === "POST" && url.pathname === "/api/payments/kpay/webhook") {
@@ -808,26 +762,26 @@ function createRequestHandler(database, options) {
           return sendJson(response, 400, { error: "KPay 通知格式不正確。" });
         }
         const registrationId = String(payload?.data?.merchant_order_id || payload?.merchant_order_id || "");
-        const row = registrationId ? findRegistration.get(registrationId) : undefined;
+        const row = registrationId ? await findRegistration.get(registrationId) : undefined;
         const outcome = webhookOutcome(payload);
         if (!row || outcome === "ignore") return sendJson(response, 200, { received: true });
         if (outcome === "paid" && row.payment_status !== "paid") {
-          markPaid.run(row.id);
-          const paid = mapRegistration(findRegistration.get(row.id));
+          await markPaid.run(row.id);
+          const paid = mapRegistration(await findRegistration.get(row.id));
           paid.emailStatus = await sendConfirmation(database, env, fetchImpl, paid);
         } else if (outcome === "failed" && row.payment_status === "pending") {
-          markFailed.run(row.id);
+          await markFailed.run(row.id);
         }
         return sendJson(response, 200, { received: true });
       }
 
       if (request.method === "GET" && url.pathname === "/api/admin/courses") {
-        requireAdmin(request);
-        return sendJson(response, 200, { courses: listCourses.all().map(mapCourse) });
+        await requireAdmin(request);
+        return sendJson(response, 200, { courses: (await listCourses.all()).map(mapCourse) });
       }
 
       if (request.method === "POST" && url.pathname === "/api/admin/courses") {
-        requireAdmin(request);
+        await requireAdmin(request);
         const body = await readJson(request);
         const name = String(body.name || "").trim();
         const description = String(body.description || "").trim();
@@ -835,17 +789,17 @@ function createRequestHandler(database, options) {
         if (!isText(name, 100) || description.length > 500 || cents == null) {
           return sendJson(response, 400, { error: "課程資料不完整或格式不正確。" });
         }
-        if (findCourseName.get(name)) return sendJson(response, 409, { error: "已有同名課程。" });
+        if (await findCourseName.get(name)) return sendJson(response, 409, { error: "已有同名課程。" });
         const id = crypto.randomUUID();
         const createdAt = new Date().toISOString();
-        insertCourse.run(id, name, description, cents, createdAt);
-        return sendJson(response, 201, { course: mapCourse(findCourse.get(id)) });
+        await insertCourse.run(id, name, description, cents, createdAt);
+        return sendJson(response, 201, { course: mapCourse(await findCourse.get(id)) });
       }
 
       if (request.method === "POST" && url.pathname === "/api/admin/slots") {
-        requireAdmin(request);
+        await requireAdmin(request);
         const body = await readJson(request);
-        const course = findCourse.get(String(body.courseId || "").trim());
+        const course = await findCourse.get(String(body.courseId || "").trim());
         const date = String(body.date || "");
         const startTime = String(body.startTime || "");
         const endTime = String(body.endTime || "");
@@ -857,7 +811,7 @@ function createRequestHandler(database, options) {
           return sendJson(response, 400, { error: "時段名額須為 1 至 500。" });
         }
         const id = crypto.randomUUID();
-        insertSlot.run(id, course.id, date, startTime, endTime, capacity, new Date().toISOString());
+        await insertSlot.run(id, course.id, date, startTime, endTime, capacity, new Date().toISOString());
         return sendJson(response, 201, {
           slot: {
             id,
@@ -873,20 +827,20 @@ function createRequestHandler(database, options) {
       }
 
       if (request.method === "GET" && url.pathname === "/api/admin/calendar") {
-        requireAdmin(request);
+        await requireAdmin(request);
         const month = url.searchParams.get("month") || hongKongParts().month;
         const range = monthRange(month);
         if (!range) return sendJson(response, 400, { error: "月份格式不正確。" });
         const now = new Date();
-        const counts = takenBySlot(now);
-        const registrations = listMonthRegistrations.all(range.start, range.next).map(mapRegistration);
+        const counts = await takenBySlot(now);
+        const registrations = (await listMonthRegistrations.all(range.start, range.next)).map(mapRegistration);
         const bySlot = new Map();
         for (const registration of registrations) {
           const list = bySlot.get(registration.slotId) || [];
           list.push(registration);
           bySlot.set(registration.slotId, list);
         }
-        const slots = listMonthSlots.all(range.start, range.next).map((row) => {
+        const slots = (await listMonthSlots.all(range.start, range.next)).map((row) => {
           const taken = counts.get(row.id) || 0;
           return {
             id: row.id,
@@ -907,18 +861,23 @@ function createRequestHandler(database, options) {
 
       const receiptMatch = url.pathname.match(/^\/api\/admin\/registrations\/([^/]+)\/receipt$/);
       if (request.method === "GET" && receiptMatch) {
-        requireAdmin(request);
-        const row = findRegistration.get(decodeURIComponent(receiptMatch[1]));
+        await requireAdmin(request);
+        const row = await findRegistration.get(decodeURIComponent(receiptMatch[1]));
         if (!row?.receipt_path) return sendJson(response, 404, { error: "找不到收據。" });
-        const full = storedPath(uploadsDir, row.receipt_path);
-        if (!full || !existsSync(full)) return sendJson(response, 404, { error: "找不到收據。" });
+        let receiptData;
+        if (database.loadReceipt) receiptData = await database.loadReceipt(row.id);
+        else {
+          const full = storedPath(uploadsDir, row.receipt_path);
+          if (full && existsSync(full)) receiptData = readFileSync(full);
+        }
+        if (!receiptData) return sendJson(response, 404, { error: "找不到收據。" });
         response.writeHead(200, {
           "Content-Type": row.receipt_mime || "application/octet-stream",
           "Content-Disposition": "inline; filename=\"receipt\"",
           "Cache-Control": "private, no-store",
           "X-Content-Type-Options": "nosniff",
         });
-        return response.end(readFileSync(full));
+        return response.end(receiptData);
       }
 
       if (request.method === "GET" && PUBLIC_FILES.has(url.pathname)) {
@@ -935,7 +894,7 @@ function createRequestHandler(database, options) {
       return sendJson(response, 404, { error: "Not found" });
     } catch (error) {
       if (error.statusCode) return sendJson(response, error.statusCode, error.payload || { error: error.message });
-      const duplicate = error.code === "ERR_SQLITE_CONSTRAINT_PRIMARYKEY";
+      const duplicate = error.code === "ERR_SQLITE_CONSTRAINT_PRIMARYKEY" || error.code === "ER_DUP_ENTRY";
       console.error(error);
       return sendJson(response, duplicate ? 409 : 500, {
         error: duplicate ? "此預約已存在。" : "伺服器暫時無法處理要求。",
@@ -950,12 +909,12 @@ function startServer(options = {}) {
   const port = options.port ?? Number(env.PORT || 8000);
   const host = options.host || env.HOST || "0.0.0.0";
   const uploadsDir = resolve(options.uploadsDir || env.UPLOADS_DIR || join(ROOT, "data", "uploads"));
-  mkdirSync(uploadsDir, { recursive: true });
-  const database = openDatabase(databasePath);
+  const database = options.database || openDatabase(databasePath);
+  if (database.kind !== "mysql") mkdirSync(uploadsDir, { recursive: true });
   const adminUsername = options.adminUsername ?? env.ADMIN_USERNAME ?? "admin";
   const adminPassword = options.adminPassword ?? env.ADMIN_PASSWORD ?? "admin1234";
   const resetAdminPassword = options.resetAdminPassword ?? (options.adminPassword == null && Boolean(env.ADMIN_PASSWORD));
-  seedAdmin(database, { username: String(adminUsername).trim() || "admin", password: String(adminPassword), reset: resetAdminPassword });
+  const ready = seedAdmin(database, { username: String(adminUsername).trim() || "admin", password: String(adminPassword), reset: resetAdminPassword });
   const server = createServer(createRequestHandler(database, {
     env,
     fetchImpl: options.fetchImpl,
@@ -970,18 +929,34 @@ function startServer(options = {}) {
     server.on("listening", tick);
     server.on("close", () => clearInterval(timer));
   }
-  server.listen(port, host);
+  ready.then(() => server.listen(port, host)).catch((error) => {
+    database.close();
+    server.emit("error", error);
+  });
   server.on("close", () => database.close());
   return { server, database, env };
 }
 
-if (require.main === module) {
-  loadEnvFile(join(ROOT, ".env"));
-  const { server } = startServer({ reminders: true });
-  server.on("listening", () => {
-    const address = server.address();
-    console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
-  });
+async function startConfiguredServer(options = {}) {
+  const env = { ...process.env, ...(options.env || {}) };
+  if (env.DB_TYPE !== "mysql") return startServer(options);
+  if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 12) {
+    throw new Error("Set ADMIN_PASSWORD to at least 12 characters for MySQL hosting.");
+  }
+  const { openMysqlDatabase } = require("./lib/mysql");
+  const database = await openMysqlDatabase(env);
+  return startServer({ ...options, database, env });
 }
 
-module.exports = { startServer, processDueReminders, loadEnvFile };
+if (require.main === module) {
+  loadEnvFile(join(ROOT, ".env"));
+  startConfiguredServer({ reminders: true }).then(({ server }) => {
+    server.on("listening", () => {
+      const address = server.address();
+      console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
+    });
+    server.on("error", (error) => { console.error(error.message); process.exitCode = 1; });
+  }).catch((error) => { console.error(error.message); process.exitCode = 1; });
+}
+
+module.exports = { startConfiguredServer, startServer, processDueReminders, loadEnvFile };
