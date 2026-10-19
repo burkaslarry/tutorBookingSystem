@@ -4,13 +4,15 @@
   "private": true,
   "description": "AI learning centre booking and check-in system",
   "scripts": {
-    "start": "node --experimental-sqlite server.js",
+    "start": "node server.js",
+    "db:render": "node scripts/render-migrate.mjs",
     "test": "node --experimental-sqlite --test"
   },
   "engines": {
-    "node": ">=22.5"
+    "node": ">=20"
   },
   "dependencies": {
-    "mysql2": "^3.24.6"
+    "mysql2": "^3.24.6",
+    "pg": "^8.23.1"
   }
 }

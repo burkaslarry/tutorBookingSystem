@@ -616,7 +616,7 @@ function createRequestHandler(database, options) {
       let receiptPath = "";
       let receiptMime = "";
       if (payment.receipt) {
-        receiptPath = database.kind === "mysql" ? `mysql:${id}` : saveReceipt(uploadsDir, id, payment.receipt);
+        receiptPath = storesReceiptInDatabase(database) ? `${database.kind}:${id}` : saveReceipt(uploadsDir, id, payment.receipt);
         receiptMime = payment.receipt.mime;
       }
       const createdAt = now.toISOString();
@@ -638,7 +638,7 @@ function createRequestHandler(database, options) {
         );
         if (database.saveReceipt && payment.receipt) await database.saveReceipt(id, payment.receipt);
       } catch (error) {
-        if (receiptPath && database.kind !== "mysql") {
+        if (receiptPath && !storesReceiptInDatabase(database)) {
           const full = storedPath(uploadsDir, receiptPath);
           if (full && existsSync(full)) unlinkSync(full);
         }
@@ -969,7 +969,7 @@ function startServer(options = {}) {
   if (process.env.TUTOR_BOOKING_SQLITE_RETRY !== "1" && (host === "127.0.0.1" || host === "localhost")) host = "0.0.0.0";
   const uploadsDir = resolve(options.uploadsDir || env.UPLOADS_DIR || join(ROOT, "data", "uploads"));
   const database = options.database || openDatabase(databasePath);
-  if (database.kind !== "mysql") mkdirSync(uploadsDir, { recursive: true });
+  if (!storesReceiptInDatabase(database)) mkdirSync(uploadsDir, { recursive: true });
   const adminUsername = options.adminUsername ?? env.ADMIN_USERNAME ?? "admin";
   const adminPassword = options.adminPassword ?? env.ADMIN_PASSWORD ?? "admin1234";
   const resetAdminPassword = options.resetAdminPassword ?? (options.adminPassword == null && Boolean(env.ADMIN_PASSWORD));
@@ -996,8 +996,20 @@ function startServer(options = {}) {
   return { server, database, env };
 }
 
+function storesReceiptInDatabase(database) {
+  return database.kind === "mysql" || database.kind === "postgres";
+}
+
 async function startConfiguredServer(options = {}) {
   const env = { ...process.env, ...(options.env || {}) };
+  if (env.DATABASE_URL) {
+    if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 12) {
+      throw new Error("Set ADMIN_PASSWORD to at least 12 characters for the Render database.");
+    }
+    const { openPostgresDatabase } = require("./lib/postgres");
+    const database = await openPostgresDatabase(env);
+    return startServer({ ...options, database, env });
+  }
   if (env.DB_TYPE !== "mysql") return startServer(options);
   if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 12) {
     throw new Error("Set ADMIN_PASSWORD to at least 12 characters for MySQL hosting.");
@@ -1009,25 +1021,25 @@ async function startConfiguredServer(options = {}) {
 
 if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
   loadEnvFile(join(ROOT, ".env"));
-  if (process.env.DB_TYPE !== "mysql" && !sqliteReady()) {
-    relaunchWithSqlite();
-  } else {
-    const port = Number(process.env.PORT || 8000);
-    console.log(`Starting tutor booking on ${process.env.HOST || "0.0.0.0"}:${port} with Node ${process.version} (${process.env.DB_TYPE === "mysql" ? "mysql" : "sqlite"})`);
-    startConfiguredServer({ reminders: true }).then(({ server }) => {
-      server.on("listening", () => {
-        const address = server.address();
-        console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
-      });
-      server.on("error", (error) => {
-        console.error(error);
-        process.exit(1);
-      });
-    }).catch((error) => {
+  if (!process.env.DATABASE_URL) {
+    console.error("DATABASE_URL is required. Local and production both use the Render Postgres database.");
+    process.exit(1);
+  }
+  const port = Number(process.env.PORT || 8000);
+  console.log(`Starting tutor booking on ${process.env.HOST || "0.0.0.0"}:${port} with Node ${process.version} (postgres)`);
+  startConfiguredServer({ reminders: true }).then(({ server }) => {
+    server.on("listening", () => {
+      const address = server.address();
+      console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
+    });
+    server.on("error", (error) => {
       console.error(error);
       process.exit(1);
     });
-  }
+  }).catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }
 
 module.exports = { startConfiguredServer, startServer, processDueReminders, loadEnvFile };
