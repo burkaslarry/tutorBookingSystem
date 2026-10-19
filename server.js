@@ -2,7 +2,6 @@ const { createServer } = require("node:http");
 const { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } = require("node:fs");
 const { extname, join, resolve, sep, basename } = require("node:path");
 const crypto = require("node:crypto");
-const { DatabaseSync } = require("node:sqlite");
 const { makePasswordRecord, verifyPassword, newSessionToken } = require("./lib/auth");
 const { parseMultipart } = require("./lib/multipart");
 const { hongKongParts, isBookable, formatSlotWhen, monthRange } = require("./lib/time");
@@ -21,7 +20,41 @@ const VALID_STATUSES = new Set(["pending", "checked-in", "cancelled"]);
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
 const SESSION_HOURS = 12;
 
+function sqliteReady() {
+  try {
+    require("node:sqlite");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function relaunchWithSqlite() {
+  if (process.env.TUTOR_BOOKING_SQLITE_RETRY === "1") {
+    console.error(`node:sqlite is unavailable on Node ${process.version}. Use Node.js 22.5 or newer.`);
+    process.exit(1);
+  }
+  console.error("node:sqlite needs --experimental-sqlite; restarting the server with that flag.");
+  const { spawn } = require("node:child_process");
+  const child = spawn(process.execPath, ["--experimental-sqlite", __filename, ...process.argv.slice(2)], {
+    stdio: "inherit",
+    env: { ...process.env, TUTOR_BOOKING_SQLITE_RETRY: "1" },
+  });
+  child.on("error", (error) => {
+    console.error(error);
+    process.exit(1);
+  });
+  child.on("exit", (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    else process.exit(code ?? 1);
+  });
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+    process.on(signal, () => child.kill(signal));
+  }
+}
+
 function openDatabase(databasePath) {
+  const { DatabaseSync } = require("node:sqlite");
   const resolvedPath = resolve(databasePath);
   mkdirSync(resolve(resolvedPath, ".."), { recursive: true });
   const database = new DatabaseSync(resolvedPath);
@@ -950,13 +983,25 @@ async function startConfiguredServer(options = {}) {
 
 if (require.main === module) {
   loadEnvFile(join(ROOT, ".env"));
-  startConfiguredServer({ reminders: true }).then(({ server }) => {
-    server.on("listening", () => {
-      const address = server.address();
-      console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
+  if (process.env.DB_TYPE !== "mysql" && !sqliteReady()) {
+    relaunchWithSqlite();
+  } else {
+    const port = Number(process.env.PORT || 8000);
+    console.log(`Starting tutor booking on ${process.env.HOST || "0.0.0.0"}:${port} with Node ${process.version} (${process.env.DB_TYPE === "mysql" ? "mysql" : "sqlite"})`);
+    startConfiguredServer({ reminders: true }).then(({ server }) => {
+      server.on("listening", () => {
+        const address = server.address();
+        console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
+      });
+      server.on("error", (error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    }).catch((error) => {
+      console.error(error);
+      process.exit(1);
     });
-    server.on("error", (error) => { console.error(error.message); process.exitCode = 1; });
-  }).catch((error) => { console.error(error.message); process.exitCode = 1; });
+  }
 }
 
 module.exports = { startConfiguredServer, startServer, processDueReminders, loadEnvFile };
