@@ -34,12 +34,37 @@ function relaunchWithSqlite() {
     console.error(`node:sqlite is unavailable on Node ${process.version}. Use Node.js 22.5 or newer.`);
     process.exit(1);
   }
-  console.error("node:sqlite needs --experimental-sqlite; restarting the server with that flag.");
+  const net = require("node:net");
   const { spawn } = require("node:child_process");
-  const child = spawn(process.execPath, ["--experimental-sqlite", __filename, ...process.argv.slice(2)], {
+  const publicPort = Number(process.env.PORT || 8000);
+  const internalPort = publicPort + 1;
+  console.error(`node:sqlite needs --experimental-sqlite; listening on 0.0.0.0:${publicPort} and starting the database process on 127.0.0.1:${internalPort}.`);
+  const child = spawn(process.execPath, ["--experimental-sqlite", __filename], {
     stdio: "inherit",
-    env: { ...process.env, TUTOR_BOOKING_SQLITE_RETRY: "1" },
+    env: {
+      ...process.env,
+      PORT: String(internalPort),
+      HOST: "127.0.0.1",
+      TUTOR_BOOKING_SQLITE_RETRY: "1",
+      TUTOR_BOOKING_FORCE_START: "1",
+    },
   });
+  const proxy = net.createServer((client) => {
+    const upstream = net.connect({ port: internalPort, host: "127.0.0.1" });
+    const closeBoth = () => {
+      client.destroy();
+      upstream.destroy();
+    };
+    upstream.on("error", closeBoth);
+    client.on("error", closeBoth);
+    client.pipe(upstream);
+    upstream.pipe(client);
+  });
+  proxy.on("error", (error) => {
+    console.error(error);
+    process.exit(1);
+  });
+  proxy.listen(publicPort, "0.0.0.0");
   child.on("error", (error) => {
     console.error(error);
     process.exit(1);
@@ -940,7 +965,8 @@ function startServer(options = {}) {
   const env = { ...process.env, ...(options.env || {}) };
   const databasePath = options.databasePath || env.DATABASE_PATH || join(ROOT, "data", "bookings.db");
   const port = options.port ?? Number(env.PORT || 8000);
-  const host = options.host || env.HOST || "0.0.0.0";
+  let host = options.host || env.HOST || "0.0.0.0";
+  if (process.env.TUTOR_BOOKING_SQLITE_RETRY !== "1" && (host === "127.0.0.1" || host === "localhost")) host = "0.0.0.0";
   const uploadsDir = resolve(options.uploadsDir || env.UPLOADS_DIR || join(ROOT, "data", "uploads"));
   const database = options.database || openDatabase(databasePath);
   if (database.kind !== "mysql") mkdirSync(uploadsDir, { recursive: true });
@@ -981,7 +1007,7 @@ async function startConfiguredServer(options = {}) {
   return startServer({ ...options, database, env });
 }
 
-if (require.main === module) {
+if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
   loadEnvFile(join(ROOT, ".env"));
   if (process.env.DB_TYPE !== "mysql" && !sqliteReady()) {
     relaunchWithSqlite();

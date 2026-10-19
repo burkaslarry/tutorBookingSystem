@@ -1,3 +1,4 @@
+function startBrowserApp() {
 const AUTH_KEY = "tutor_auth_session";
 const SCREEN_COPY = {
   register: ["學生登記", "選擇課程時段，並上載 .jpg 付款證明。"],
@@ -680,4 +681,12 @@ function hongKongDate(date = new Date()) {
 
 function hongKongMonth() {
   return hongKongDate().slice(0, 7);
+}
+}
+
+if (typeof document === "undefined") {
+  process.env.TUTOR_BOOKING_FORCE_START = "1";
+  require("./server.js");
+} else {
+  startBrowserApp();
 }
