@@ -108,7 +108,6 @@
       <section id="screen-login" data-screen="login" hidden>
         <form id="login-form" class="form-panel login-panel">
           <h2>後台登入</h2>
-          <button type="button" id="login-help-open" class="text-button">如何登入？</button>
           <label>
             帳號
             <input name="username" type="text" value="admin" autocomplete="username" required>
@@ -212,20 +211,6 @@
 
       <footer>AI 學習中心 <span aria-hidden="true">·</span> 預約與收據儲存於本機資料庫</footer>
     </main>
-
-    <div id="login-help" class="dialog-backdrop" hidden>
-      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="login-help-title">
-        <div class="dialog-heading">
-          <h2 id="login-help-title">如何登入？</h2>
-          <button type="button" id="login-help-close" class="text-button" aria-label="關閉">✕</button>
-        </div>
-        <ul>
-          <li><strong>admin</strong> / admin1234（示範管理員）</li>
-        </ul>
-        <p class="field-note">正式環境請以 ADMIN_PASSWORD 重設密碼。此帳號只限示範。</p>
-        <button type="button" id="login-help-dismiss" class="export-button">關閉</button>
-      </div>
-    </div>
 
     <nav class="mobile-tabs" aria-label="手機導覽">
       <button type="button" data-go="register"><span aria-hidden="true">＋</span><span>登記</span></button>

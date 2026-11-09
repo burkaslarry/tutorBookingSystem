@@ -10,7 +10,7 @@
 npm start
 ```
 
-然後開啟 [http://localhost:8000](http://localhost:8000)。首次啟動時會建立 `data/bookings.db`。示範管理員帳號見登入頁「如何登入？」。正式環境請在 `.env` 設定 `ADMIN_PASSWORD`（變數名稱見 `.env.example`）。
+然後開啟 [http://localhost:8000](http://localhost:8000)。首次啟動時會建立 `data/bookings.db`。示範管理員帳號是 `admin` / `admin1234`。正式環境請在 `.env` 設定 `ADMIN_PASSWORD`（變數名稱見 `.env.example`）。
 
 執行測試：
 

@@ -31,7 +31,6 @@ const registerSubmit = registerForm.querySelector("[type=submit]");
 let registrationBusy = false;
 const loginForm = document.querySelector("#login-form");
 const loginError = document.querySelector("#login-error");
-const loginHelp = document.querySelector("#login-help");
 const sessionLabel = document.querySelector("#session-label");
 const calendarGrid = document.querySelector("#calendar-grid");
 const calendarCaption = document.querySelector("#calendar-caption");
@@ -46,15 +45,6 @@ let calendarMonth = hongKongMonth();
 let selectedDate = hongKongDate();
 let previewUrl = "";
 const receiptUrls = [];
-
-document.querySelector("#login-help-open").addEventListener("click", () => {
-  loginHelp.hidden = false;
-});
-document.querySelector("#login-help-close").addEventListener("click", closeLoginHelp);
-document.querySelector("#login-help-dismiss").addEventListener("click", closeLoginHelp);
-loginHelp.addEventListener("click", (event) => {
-  if (event.target === loginHelp) closeLoginHelp();
-});
 
 document.body.addEventListener("click", (event) => {
   const button = event.target.closest("[data-go]");
@@ -97,10 +87,6 @@ async function init() {
   if (getSession()) await refreshSession();
   if (!location.hash) location.hash = "register";
   route();
-}
-
-function closeLoginHelp() {
-  loginHelp.hidden = true;
 }
 
 function getSession() {
