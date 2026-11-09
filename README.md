@@ -69,6 +69,7 @@ GET https://你的網域/api/health
 | 現象 | 原因 |
 |------|------|
 | 登入「操作失敗」 | `/api` 503：Framework 設成 **Vite**（靜態站）、或未設 **Entry file `server.js`** |
+| Runtime log：`did not call listen() within 3 seconds` | Hostinger 要求 3 秒內 `listen()`；新版 `server.js` 會先監聽、MySQL 連好後再接管請求 |
 | `database` 唔係 `mysql` | 缺 `DB_TYPE=mysql` 或 MySQL 連線失敗 |
 | 密碼啱但 401 | 未 Redeploy；或 DB 內仍係舊 hash |
 

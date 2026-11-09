@@ -1062,11 +1062,21 @@ function startServer(options = {}) {
   const adminPassword = options.adminPassword ?? env.ADMIN_PASSWORD ?? "admin1234";
   const resetAdminPassword = options.resetAdminPassword ?? (options.adminPassword == null && Boolean(env.ADMIN_PASSWORD));
   const ready = seedAdmin(database, { username: String(adminUsername).trim() || "admin", password: String(adminPassword), reset: resetAdminPassword });
-  const server = createServer(createRequestHandler(database, {
-    env,
-    fetchImpl: options.fetchImpl,
-    uploadsDir,
-  }));
+  let activeHandler = null;
+  const server = options.server ?? createServer((request, response) => {
+    const handler = options.gate ? options.gate.handler : activeHandler;
+    if (!handler) return sendJson(response, 503, { ok: false, error: "Server starting" });
+    return handler(request, response);
+  });
+  const attachHandler = () => {
+    const handler = createRequestHandler(database, {
+      env,
+      fetchImpl: options.fetchImpl,
+      uploadsDir,
+    });
+    if (options.gate) options.gate.handler = handler;
+    else activeHandler = handler;
+  };
   if (options.reminders) {
     const tick = () => {
       processDueReminders(database, { env, fetchImpl: options.fetchImpl }).catch((error) => console.error(error));
@@ -1076,7 +1086,10 @@ function startServer(options = {}) {
     server.on("listening", tick);
     server.on("close", () => clearInterval(timer));
   }
-  ready.then(() => server.listen(port, host)).catch((error) => {
+  if (!options.server) {
+    server.listen(port, host);
+  }
+  ready.then(attachHandler).catch((error) => {
     database.close();
     server.emit("error", error);
   });
@@ -1113,22 +1126,28 @@ if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
     relaunchWithSqlite();
   } else {
     const port = Number(process.env.PORT || 8000);
+    let host = process.env.HOST || "0.0.0.0";
+    if (host === "127.0.0.1" || host === "localhost") host = "0.0.0.0";
     const databaseMode = databaseModeFromEnv(process.env);
     const frontendMode = existsSync(join(DIST_DIR, "index.html")) ? "dist" : "dev";
-    console.log(`Starting tutor booking on ${process.env.HOST || "0.0.0.0"}:${port} with Node ${process.version} (${databaseMode}, frontend ${frontendMode})`);
-    startConfiguredServer({ reminders: true }).then(({ server }) => {
-      server.on("listening", () => {
-        const address = server.address();
-        console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
-      });
-      server.on("error", (error) => {
-        console.error(error);
-        process.exit(1);
-      });
-    }).catch((error) => {
-      console.error(error);
-      process.exit(1);
-    });
+    console.log(`Starting tutor booking on ${host}:${port} with Node ${process.version} (${databaseMode}, frontend ${frontendMode})`);
+  const gate = { handler: null };
+  const server = createServer((request, response) => {
+    if (!gate.handler) return sendJson(response, 503, { ok: false, error: "Server starting" });
+    return gate.handler(request, response);
+  });
+  server.on("error", (error) => {
+    console.error(error);
+    process.exit(1);
+  });
+  server.listen(port, host, () => {
+    const address = server.address();
+    console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
+  });
+  startConfiguredServer({ gate, server, reminders: true }).catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
   }
 }
 
