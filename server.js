@@ -1119,18 +1119,31 @@ async function startConfiguredServer(options = {}) {
   return startServer(options);
 }
 
-if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
+function shouldBootProductionServer() {
+  if (process.env.TUTOR_BOOKING_FORCE_START === "1") return true;
+  if (process.env.TUTOR_BOOKING_NO_AUTO_START === "1") return false;
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return resolve(entry) === __filename;
+  } catch {
+    return false;
+  }
+}
+
+function bootProductionServer() {
   loadEnvFile(join(ROOT, ".env"));
   applyDatabaseEnvRules(process.env);
   if (databaseModeFromEnv(process.env) === "sqlite" && !sqliteReady()) {
     relaunchWithSqlite();
-  } else {
-    const port = Number(process.env.PORT || 8000);
-    let host = process.env.HOST || "0.0.0.0";
-    if (host === "127.0.0.1" || host === "localhost") host = "0.0.0.0";
-    const databaseMode = databaseModeFromEnv(process.env);
-    const frontendMode = existsSync(join(DIST_DIR, "index.html")) ? "dist" : "dev";
-    console.log(`Starting tutor booking on ${host}:${port} with Node ${process.version} (${databaseMode}, frontend ${frontendMode})`);
+    return;
+  }
+  const port = Number(process.env.PORT || 8000);
+  let host = process.env.HOST || "0.0.0.0";
+  if (host === "127.0.0.1" || host === "localhost") host = "0.0.0.0";
+  const databaseMode = databaseModeFromEnv(process.env);
+  const frontendMode = existsSync(join(DIST_DIR, "index.html")) ? "dist" : "dev";
+  console.log(`Starting tutor booking on ${host}:${port} with Node ${process.version} (${databaseMode}, frontend ${frontendMode})`);
   const gate = { handler: null };
   const server = createServer((request, response) => {
     if (!gate.handler) return sendJson(response, 503, { ok: false, error: "Server starting" });
@@ -1148,10 +1161,14 @@ if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
     console.error(error);
     process.exit(1);
   });
-  }
+}
+
+if (shouldBootProductionServer()) {
+  bootProductionServer();
 }
 
 module.exports = {
+  bootProductionServer,
   startConfiguredServer,
   startServer,
   processDueReminders,

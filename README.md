@@ -46,7 +46,7 @@ ADMIN_PASSWORD=至少12字元（例：admin1234aipa5678）
 | Framework | **Express** 或 **Other**（唔好選 Vite） |
 | Build script | `build`（即 `npm run build`） |
 | Output directory | 留空（Express / Other + entry file） |
-| Entry file | `server.js` |
+| Entry file | **`hostinger.js`**（唔好用 `require.main` 守衛；`server.js` 只係本機 `npm start`） |
 | Install | `npm ci` |
 | Node | 24.x 或 ≥20 |
 
@@ -69,7 +69,7 @@ GET https://你的網域/api/health
 | 現象 | 原因 |
 |------|------|
 | 登入「操作失敗」 | `/api` 503：Framework 設成 **Vite**（靜態站）、或未設 **Entry file `server.js`** |
-| Runtime log：`did not call listen() within 3 seconds` | Hostinger 要求 3 秒內 `listen()`；新版 `server.js` 會先監聽、MySQL 連好後再接管請求 |
+| Runtime log：`did not call listen() within 3 seconds` | **Entry file 改做 `hostinger.js`**；勿用 `require.main === module` 包住啟動邏輯 |
 | `database` 唔係 `mysql` | 缺 `DB_TYPE=mysql` 或 MySQL 連線失敗 |
 | 密碼啱但 401 | 未 Redeploy；或 DB 內仍係舊 hash |
 

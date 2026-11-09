@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js",
+    "start:hostinger": "node hostinger.js",
     "start:prod": "npm run build && node server.js",
     "db:render": "node scripts/render-migrate.mjs",
     "test": "node --experimental-sqlite --test"
