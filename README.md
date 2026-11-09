@@ -134,3 +134,4 @@ docker compose up -d --build
 | 啟動即退出 | Hostinger 設了 `DATABASE_URL` 但連唔到 Postgres；刪除 `DATABASE_URL`，只用 `DB_TYPE=mysql` |
 | 帳號密碼正確但 401 | 改咗 `ADMIN_PASSWORD` 未 Redeploy；或舊密碼仍在 DB，需要 restart 讓 `seedAdmin` 更新 |
 | `ADMIN_PASSWORD` 太短 | MySQL / Postgres 模式最少 12 字元 |
+| Render **502** | 進程 crash；跟 Logs 修 `DATABASE_URL` / `ADMIN_PASSWORD` / build 指令 |
