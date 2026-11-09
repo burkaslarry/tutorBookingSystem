@@ -1,5 +1,5 @@
 const { createServer } = require("node:http");
-const { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } = require("node:fs");
+const { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, statSync } = require("node:fs");
 const { extname, join, resolve, sep, basename } = require("node:path");
 const crypto = require("node:crypto");
 const { makePasswordRecord, verifyPassword, newSessionToken } = require("./lib/auth");
@@ -10,11 +10,20 @@ const { kpayConfig, verifyWebhook, webhookOutcome } = require("./lib/kpay");
 const { selectDueReminders } = require("./lib/reminders");
 
 const ROOT = __dirname;
-const PUBLIC_FILES = new Set(["/", "/index.html", "/app.js", "/styles.css"]);
-const MIME_TYPES = {
+const DIST_DIR = join(ROOT, "dist");
+const DEV_STATIC_FILES = new Set(["index.html", "app.js", "styles.css"]);
+const STATIC_MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
 const VALID_STATUSES = new Set(["pending", "checked-in", "cancelled"]);
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
@@ -240,6 +249,42 @@ async function readJson(request) {
     chunks.push(chunk);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+}
+
+function databaseModeFromEnv(env) {
+  if (env.DB_TYPE === "mysql") return "mysql";
+  if (env.DATABASE_URL) return "postgres";
+  return "sqlite";
+}
+
+function staticRoot() {
+  const distIndex = join(DIST_DIR, "index.html");
+  if (existsSync(distIndex)) return DIST_DIR;
+  return ROOT;
+}
+
+function resolveStaticFile(pathname) {
+  const root = staticRoot();
+  const useDist = root === DIST_DIR;
+  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
+  if (!relative || relative.includes("..") || relative.includes("\0")) return null;
+  const filePath = resolve(root, relative);
+  if (!filePath.startsWith(root) || !existsSync(filePath)) {
+    if (!useDist && DEV_STATIC_FILES.has(relative)) {
+      const devPath = join(ROOT, relative);
+      if (existsSync(devPath) && statSync(devPath).isFile()) return devPath;
+    }
+    return null;
+  }
+  if (!statSync(filePath).isFile()) return null;
+  if (!useDist && !DEV_STATIC_FILES.has(relative)) return null;
+  return filePath;
+}
+
+function requireAdminPassword(env, hosting) {
+  if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 12) {
+    throw new Error(`Set ADMIN_PASSWORD to at least 12 characters for ${hosting}.`);
+  }
 }
 
 function loadEnvFile(filePath) {
@@ -961,15 +1006,26 @@ function createRequestHandler(database, options) {
         return response.end(receiptData);
       }
 
-      if (request.method === "GET" && PUBLIC_FILES.has(url.pathname)) {
-        const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
-        const filePath = join(ROOT, pathname);
-        if (!existsSync(filePath)) return sendJson(response, 404, { error: "Not found" });
-        response.writeHead(200, {
-          "Content-Type": MIME_TYPES[extname(filePath)] || "application/octet-stream",
-          "Cache-Control": "no-cache",
+      if (request.method === "GET" && url.pathname === "/api/health") {
+        return sendJson(response, 200, {
+          ok: true,
+          database: database.kind || "sqlite",
+          frontend: existsSync(join(DIST_DIR, "index.html")) ? "dist" : "dev",
         });
-        return response.end(readFileSync(filePath));
+      }
+
+      if (request.method === "GET") {
+        const filePath = resolveStaticFile(url.pathname);
+        if (filePath) {
+          const cacheControl = url.pathname.startsWith("/assets/")
+            ? "public, max-age=604800"
+            : "no-cache";
+          response.writeHead(200, {
+            "Content-Type": STATIC_MIME_TYPES[extname(filePath)] || "application/octet-stream",
+            "Cache-Control": cacheControl,
+          });
+          return response.end(readFileSync(filePath));
+        }
       }
 
       return sendJson(response, 404, { error: "Not found" });
@@ -1025,31 +1081,31 @@ function storesReceiptInDatabase(database) {
 
 async function startConfiguredServer(options = {}) {
   const env = { ...process.env, ...(options.env || {}) };
-  if (env.DATABASE_URL) {
-    if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 12) {
-      throw new Error("Set ADMIN_PASSWORD to at least 12 characters for the Render database.");
-    }
+  const mode = databaseModeFromEnv(env);
+  if (mode === "mysql") {
+    requireAdminPassword(env, "MySQL hosting");
+    const { openMysqlDatabase } = require("./lib/mysql");
+    const database = await openMysqlDatabase(env);
+    return startServer({ ...options, database, env });
+  }
+  if (mode === "postgres") {
+    requireAdminPassword(env, "the Render database");
     const { openPostgresDatabase } = require("./lib/postgres");
     const database = await openPostgresDatabase(env);
     return startServer({ ...options, database, env });
   }
-  if (env.DB_TYPE !== "mysql") return startServer(options);
-  if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 12) {
-    throw new Error("Set ADMIN_PASSWORD to at least 12 characters for MySQL hosting.");
-  }
-  const { openMysqlDatabase } = require("./lib/mysql");
-  const database = await openMysqlDatabase(env);
-  return startServer({ ...options, database, env });
+  return startServer(options);
 }
 
 if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
   loadEnvFile(join(ROOT, ".env"));
-  if (!process.env.DATABASE_URL && process.env.DB_TYPE !== "mysql" && !sqliteReady()) {
+  if (databaseModeFromEnv(process.env) === "sqlite" && !sqliteReady()) {
     relaunchWithSqlite();
   } else {
     const port = Number(process.env.PORT || 8000);
-    const databaseMode = process.env.DATABASE_URL ? "postgres" : process.env.DB_TYPE === "mysql" ? "mysql" : "sqlite";
-    console.log(`Starting tutor booking on ${process.env.HOST || "0.0.0.0"}:${port} with Node ${process.version} (${databaseMode})`);
+    const databaseMode = databaseModeFromEnv(process.env);
+    const frontendMode = existsSync(join(DIST_DIR, "index.html")) ? "dist" : "dev";
+    console.log(`Starting tutor booking on ${process.env.HOST || "0.0.0.0"}:${port} with Node ${process.version} (${databaseMode}, frontend ${frontendMode})`);
     startConfiguredServer({ reminders: true }).then(({ server }) => {
       server.on("listening", () => {
         const address = server.address();
@@ -1066,4 +1122,11 @@ if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
   }
 }
 
-module.exports = { startConfiguredServer, startServer, processDueReminders, loadEnvFile };
+module.exports = {
+  startConfiguredServer,
+  startServer,
+  processDueReminders,
+  loadEnvFile,
+  databaseModeFromEnv,
+  resolveStaticFile,
+};

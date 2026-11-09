@@ -23,6 +23,14 @@ test("serves the booking app", async () => {
   assert.match(await response.text(), /AI 課程預約及簽到/);
 });
 
+test("reports health", async () => {
+  const response = await fetch(`${await baseUrl()}/api/health`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.database, "sqlite");
+});
+
 test("creates, lists, and updates a booking", async () => {
   const url = await baseUrl();
   const booking = {
