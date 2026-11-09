@@ -1,5 +1,4 @@
-# Render Blueprint — tutor booking (Postgres). Sync in Dashboard after push.
-# Existing Postgres (e.g. StorySeed / johnny_ai_tutor_* tables): set DATABASE_URL manually; do not add a second DB here unless you want a new one.
+# Optional Render Postgres deploy only. Production on Hostinger uses DB_TYPE=mysql — do not use this Blueprint for Hostinger.
 
 services:
   - type: web

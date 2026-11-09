@@ -257,6 +257,15 @@ function databaseModeFromEnv(env) {
   return "sqlite";
 }
 
+function applyDatabaseEnvRules(env = process.env) {
+  if (env.DB_TYPE !== "mysql") return env;
+  if (env.DATABASE_URL) {
+    console.warn("DB_TYPE=mysql: ignoring DATABASE_URL. Production uses Hostinger MySQL only.");
+    delete env.DATABASE_URL;
+  }
+  return env;
+}
+
 function staticRoot() {
   const distIndex = join(DIST_DIR, "index.html");
   if (existsSync(distIndex)) return DIST_DIR;
@@ -1080,7 +1089,7 @@ function storesReceiptInDatabase(database) {
 }
 
 async function startConfiguredServer(options = {}) {
-  const env = { ...process.env, ...(options.env || {}) };
+  const env = applyDatabaseEnvRules({ ...process.env, ...(options.env || {}) });
   const mode = databaseModeFromEnv(env);
   if (mode === "mysql") {
     requireAdminPassword(env, "MySQL hosting");
@@ -1099,6 +1108,7 @@ async function startConfiguredServer(options = {}) {
 
 if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
   loadEnvFile(join(ROOT, ".env"));
+  applyDatabaseEnvRules(process.env);
   if (databaseModeFromEnv(process.env) === "sqlite" && !sqliteReady()) {
     relaunchWithSqlite();
   } else {
@@ -1127,6 +1137,7 @@ module.exports = {
   startServer,
   processDueReminders,
   loadEnvFile,
+  applyDatabaseEnvRules,
   databaseModeFromEnv,
   resolveStaticFile,
 };

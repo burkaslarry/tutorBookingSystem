@@ -2,41 +2,22 @@
 
 供補習中心使用的預約系統。管理員登入後可建立課程與上課時段，並在日曆查看預約及付款證明。學生於公開登記表選擇時段，並上載 .jpg 付款證明。
 
-## 使用方式（本機）
+**正式環境建議：全部用 Hostinger（Node + MySQL）**，唔好再用 Render 做 API 或 Postgres。參考 `.env.hostinger.example`。
 
-需要 Node.js 22.5 或更新版本：
+## Hostinger 正式部署（唯一推薦）
 
-```sh
-npm ci
-npm start
-```
+### 架構
 
-開啟 [http://localhost:8000](http://localhost:8000)。首次啟動會建立 `data/bookings.db`（SQLite）。未設定 `ADMIN_PASSWORD` 時，示範帳號為 `admin` / `admin1234`；正式環境請在 `.env` 設定 `ADMIN_PASSWORD`（至少 12 字元）。
+同一個 Hostinger **Node.js Web Application**：
 
-開發前端可用 `npm run dev`（Vite，API 會 proxy 到 `127.0.0.1:8000`）。
+- `npm run build` → `dist/` 前端
+- `npm start` → `server.js` 提供 `/api/*` + `dist/`
 
-執行測試：
+前端 **唔使** `VITE_API_BASE`；所有請求打同一個網域。
 
-```sh
-npm test
-```
+### 1. MySQL
 
-正式套件（含 Vite build）：
-
-```sh
-npm run build
-npm start
-```
-
-同一個 `npm start` 會在偵測到 `dist/index.html` 時，自動以 `dist/` 提供已編譯的前端。
-
-## Hostinger Web App（GitHub + MySQL）
-
-Hostinger 必須用 **Node.js Web Application**（`npm start` 長駐），唔可以只用靜態網站托管 `dist/`。靜態-only 會令 `/api/*` 回 **503**，登入畫面顯示「操作失敗，請再試一次。」
-
-### 1. 建立 MySQL 資料庫
-
-於 hPanel 建立資料庫，記下全名（含帳戶前綴）的 `DB_NAME`、`DB_USER`、`DB_PASSWORD`。
+hPanel 建立資料庫，記下 **含帳戶前綴** 嘅 `DB_NAME`、`DB_USER`、`DB_PASSWORD`。
 
 ### 2. 環境變數（hPanel → Web App → Environment）
 
@@ -48,93 +29,80 @@ DB_NAME=你的資料庫全名
 DB_USER=你的資料庫用戶全名
 DB_PASSWORD=你的資料庫密碼
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=至少12字元的強密碼（例：admin1234aipa5678）
+ADMIN_PASSWORD=至少12字元（例：admin1234aipa5678）
 ```
 
-**請勿**在 Hostinger 設定 `DATABASE_URL`（會改連 Render Postgres 而令程式啟動失敗）。  
-**請勿**設定 `VITE_API_BASE`（前端與 API 應同一個網域，由 `server.js` 一併提供）。
+**必須刪除或未設定：**
 
-### 3. GitHub 部署設定
+- `DATABASE_URL`（程式在 `DB_TYPE=mysql` 時會忽略，但刪走可避免混淆）
+- `VITE_API_BASE`（唔好指去 Render）
+
+### 3. GitHub 部署
 
 | 項目 | 值 |
 |------|-----|
-| 分支 | `master`（或你的部署分支） |
-| Node.js | 24.x（或 ≥20） |
-| 根目錄 | `./` |
+| 類型 | **Node.js Web Application**（唔好淨係靜態站） |
 | Install | `npm ci` |
 | Build | `npm run build` |
 | Start | `npm start` |
+| Node | 24.x 或 ≥20 |
 
-`npm run build` 會產生 `dist/`；`npm start` 會用 Node 同時提供 API 與 `dist/` 前端。
-
-### 4. 部署後檢查
+### 4. 驗收
 
 ```text
 GET https://你的網域/api/health
 ```
 
-應回 JSON，例如：
+成功例子：
 
 ```json
 {"ok":true,"database":"mysql","frontend":"dist"}
 ```
 
-若 `database` 唔係 `mysql`、或回 503，請睇 **Deployments → Logs** 有冇 MySQL 連線錯誤或缺少環境變數。
+然後用 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 登入 `/#login`。改密碼後要 **Redeploy**，啟動時先會寫入 MySQL。
 
-管理員登入：`ADMIN_USERNAME` + `ADMIN_PASSWORD`。修改密碼後要 **Redeploy / Restart**，啟動時才會用新密碼更新資料庫。
+### 常見錯誤
 
-## Render（Postgres，Boost / 付費）
+| 現象 | 原因 |
+|------|------|
+| 登入「操作失敗」 | `/api` 503：只有靜態 `dist/`、或未設 `npm start` |
+| `database` 唔係 `mysql` | 缺 `DB_TYPE=mysql` 或 MySQL 連線失敗 |
+| 密碼啱但 401 | 未 Redeploy；或 DB 內仍係舊 hash |
 
-若 Render（例如 `tutorbookingsystem.onrender.com`）已 Boost，先定 **一個生產庫**：Hostinger MySQL **或** Render Postgres，唔好兩套數據各寫各的。
+---
 
-環境變數：`DATABASE_URL`、`ADMIN_USERNAME=admin`、`ADMIN_PASSWORD`（≥12 字）、`PGSSL=true`、`PGSSLMODE=require`；唔好設 `DB_TYPE=mysql`。
+## 本機開發
 
-| Build | `npm ci && npm run build` |
-| Start | `npm start` |
-| Health | `/api/health` |
+需要 Node.js 22.5+：
 
-502 多數係進程未起：睇 Logs、`ADMIN_PASSWORD` 長度、`DATABASE_URL`、有冇 build 出 `dist/`。repo 有 `render.yaml` 可對 Dashboard 後 Apply。本機 `npm run db:render` 可重跑 `sql/johnny_ai_tutor.sql`。
+```sh
+npm ci
+npm start
+```
 
-分工：**A** 只用 Hostinger（MySQL）；**B** Hostinger 前端 + `VITE_API_BASE` 指 Render API；**C** 只用 Render Postgres。
+本機可用 SQLite（`data/bookings.db`），或 `.env` 設 `DATABASE_URL` 連 Postgres **僅供開發**。未設 `ADMIN_PASSWORD` 時示範帳號：`admin` / `admin1234`。
+
+```sh
+npm run dev    # Vite，API proxy 到 :8000
+npm test
+npm run build && npm start   # 模擬 Hostinger
+```
 
 ## Windows（Docker）
 
-安裝並啟動 Docker Desktop，使用 Linux containers。在 PowerShell 進入專案目錄：
-
 ```powershell
 Copy-Item .env.example .env
-notepad .env
-```
-
-在 `.env` 加入 `ADMIN_PASSWORD=你的強密碼`。然後啟動：
-
-```powershell
+# 設定 ADMIN_PASSWORD
 docker compose up -d --build
 ```
-
-開啟 http://localhost:8000。管理員預設用戶名為 `admin`，密碼使用剛設定的值。
 
 ## 功能
 
 - 管理員登入（Bearer session）
-- 建立課程與有名額的上課時段
-- 日曆查看時段、預約與付款證明
-- 學生登記；時段已滿時建議其他尚有空位的課程或時段
-- 學生須上載 .jpg 付款證明
-- 學生登記必須填寫公司名稱
-- 預約確認及課前出席提醒電郵（Resend，需 `RESEND_API_KEY`）
+- 課程、時段、日曆、收據
+- 學生登記（公司名稱 + .jpg 付款證明）
+- 電郵提醒（Resend，可選）
 
-## 環境變數
+## Render（唔再用於此專案正式站）
 
-複製 `.env.example` 為 `.env`。資料庫與管理員密鑰只放在環境變數，不要提交到 Git。
-
-## 疑難排解
-
-| 現象 | 常見原因 |
-|------|-----------|
-| 登入「操作失敗，請再試一次」 | `/api/auth/login` 無回應；多數係 API 503，Node 未啟動或只得靜態 `dist/` |
-| `/api/health` 503 | 同上一項；改為 Node Web App，`Start` = `npm start` |
-| 啟動即退出 | Hostinger 設了 `DATABASE_URL` 但連唔到 Postgres；刪除 `DATABASE_URL`，只用 `DB_TYPE=mysql` |
-| 帳號密碼正確但 401 | 改咗 `ADMIN_PASSWORD` 未 Redeploy；或舊密碼仍在 DB，需要 restart 讓 `seedAdmin` 更新 |
-| `ADMIN_PASSWORD` 太短 | MySQL / Postgres 模式最少 12 字元 |
-| Render **502** | 進程 crash；跟 Logs 修 `DATABASE_URL` / `ADMIN_PASSWORD` / build 指令 |
+若舊有 `tutorbookingsystem.onrender.com` 可暫停慳錢。倉庫內 `render.yaml` / `npm run db:render` 只係歷史 Postgres 工具，**與 Hostinger MySQL 正式站無關**。
