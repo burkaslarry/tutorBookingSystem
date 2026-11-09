@@ -1,4 +1,10 @@
 function startBrowserApp() {
+const API_BASE = import.meta.env?.VITE_API_BASE || "";
+
+function apiUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
 const AUTH_KEY = "tutor_auth_session";
 const SCREEN_COPY = {
   register: ["學生登記", "選擇課程時段，並上載 .jpg 付款證明。"],
@@ -534,12 +540,6 @@ function registrationRow(registration) {
     loadReceipt(registration.id, image);
   }
   return row;
-}
-
-const API_BASE = import.meta.env?.VITE_API_BASE || "";
-
-function apiUrl(path) {
-  return `${API_BASE}${path}`;
 }
 
 async function loadReceipt(id, image) {

@@ -1044,25 +1044,26 @@ async function startConfiguredServer(options = {}) {
 
 if (require.main === module || process.env.TUTOR_BOOKING_FORCE_START === "1") {
   loadEnvFile(join(ROOT, ".env"));
-  if (!process.env.DATABASE_URL) {
-    console.error("DATABASE_URL is required. Local and production both use the Render Postgres database.");
-    process.exit(1);
-  }
-  const port = Number(process.env.PORT || 8000);
-  console.log(`Starting tutor booking on ${process.env.HOST || "0.0.0.0"}:${port} with Node ${process.version} (postgres)`);
-  startConfiguredServer({ reminders: true }).then(({ server }) => {
-    server.on("listening", () => {
-      const address = server.address();
-      console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
-    });
-    server.on("error", (error) => {
+  if (!process.env.DATABASE_URL && process.env.DB_TYPE !== "mysql" && !sqliteReady()) {
+    relaunchWithSqlite();
+  } else {
+    const port = Number(process.env.PORT || 8000);
+    const databaseMode = process.env.DATABASE_URL ? "postgres" : process.env.DB_TYPE === "mysql" ? "mysql" : "sqlite";
+    console.log(`Starting tutor booking on ${process.env.HOST || "0.0.0.0"}:${port} with Node ${process.version} (${databaseMode})`);
+    startConfiguredServer({ reminders: true }).then(({ server }) => {
+      server.on("listening", () => {
+        const address = server.address();
+        console.log(`AI 課程預約系統：http://${address.address}:${address.port}`);
+      });
+      server.on("error", (error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    }).catch((error) => {
       console.error(error);
       process.exit(1);
     });
-  }).catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  }
 }
 
 module.exports = { startConfiguredServer, startServer, processDueReminders, loadEnvFile };
