@@ -39,12 +39,15 @@ ADMIN_PASSWORD=至少12字元（例：admin1234aipa5678）
 
 ### 3. GitHub 部署
 
+**重要：** hPanel 若自動偵測做 **Framework: Vite**，只會 `vite build` 再發佈 `dist/`（靜態），**唔會**跑 `server.js`，`/api/*` 會 **503**。請改做 **Express** 或 **Other**：
+
 | 項目 | 值 |
 |------|-----|
-| 類型 | **Node.js Web Application**（唔好淨係靜態站） |
+| Framework | **Express** 或 **Other**（唔好選 Vite） |
+| Build script | `build`（即 `npm run build`） |
+| Output directory | 留空（Express / Other + entry file） |
+| Entry file | `server.js` |
 | Install | `npm ci` |
-| Build | `npm run build` |
-| Start | `npm start` |
 | Node | 24.x 或 ≥20 |
 
 ### 4. 驗收
@@ -65,7 +68,7 @@ GET https://你的網域/api/health
 
 | 現象 | 原因 |
 |------|------|
-| 登入「操作失敗」 | `/api` 503：只有靜態 `dist/`、或未設 `npm start` |
+| 登入「操作失敗」 | `/api` 503：Framework 設成 **Vite**（靜態站）、或未設 **Entry file `server.js`** |
 | `database` 唔係 `mysql` | 缺 `DB_TYPE=mysql` 或 MySQL 連線失敗 |
 | 密碼啱但 401 | 未 Redeploy；或 DB 內仍係舊 hash |
 
