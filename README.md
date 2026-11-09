@@ -83,16 +83,19 @@ GET https://你的網域/api/health
 
 管理員登入：`ADMIN_USERNAME` + `ADMIN_PASSWORD`。修改密碼後要 **Redeploy / Restart**，啟動時才會用新密碼更新資料庫。
 
-## Render（Postgres，可選）
+## Render（Postgres，Boost / 付費）
 
-Render 或其他 Postgres 托管可設：
+若 Render（例如 `tutorbookingsystem.onrender.com`）已 Boost，先定 **一個生產庫**：Hostinger MySQL **或** Render Postgres，唔好兩套數據各寫各的。
 
-```text
-DATABASE_URL=postgresql://...
-ADMIN_PASSWORD=至少12字元
-```
+環境變數：`DATABASE_URL`、`ADMIN_USERNAME=admin`、`ADMIN_PASSWORD`（≥12 字）、`PGSSL=true`、`PGSSLMODE=require`；唔好設 `DB_TYPE=mysql`。
 
-**唔好**同時設 `DB_TYPE=mysql`；MySQL 模式會優先於 `DATABASE_URL`。
+| Build | `npm ci && npm run build` |
+| Start | `npm start` |
+| Health | `/api/health` |
+
+502 多數係進程未起：睇 Logs、`ADMIN_PASSWORD` 長度、`DATABASE_URL`、有冇 build 出 `dist/`。repo 有 `render.yaml` 可對 Dashboard 後 Apply。本機 `npm run db:render` 可重跑 `sql/johnny_ai_tutor.sql`。
+
+分工：**A** 只用 Hostinger（MySQL）；**B** Hostinger 前端 + `VITE_API_BASE` 指 Render API；**C** 只用 Render Postgres。
 
 ## Windows（Docker）
 
